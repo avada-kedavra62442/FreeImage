@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Blend, Check, ChevronDown, Circle, Crop, Download, Eraser, FileImage, FileText, Frame, Gauge, Image as ImageIcon, LockKeyhole, Maximize2, Menu, MousePointer2, MoveUpRight, Paintbrush, Plus, RotateCcw, ScanFace, ShieldCheck, Sparkles, Upload, WandSparkles, X, Zap } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Blend, Check, ChevronDown, Circle, Crop, Download, Eraser, FileImage, FileText, Frame, Gauge, Github, Image as ImageIcon, Linkedin, LockKeyhole, Mail, Maximize2, Menu, MousePointer2, MoveUpRight, Paintbrush, Plus, RotateCcw, ScanFace, ShieldCheck, Sparkles, Upload, WandSparkles, X, Zap } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 const groups = [
@@ -31,6 +31,11 @@ const groups = [
   ]},
 ];
 const allTools = groups.flatMap(g=>g.tools);
+const routeSlug = id => id === 'image-pdf' ? 'image-to-pdf' : id;
+const routeToolId = () => {
+  const slug = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  return allTools.find(t => routeSlug(t[0]) === slug)?.[0] || null;
+};
 const defaults = { width: 1200, height: 800, quality: 82, cropX: 0, cropY: 0, cropW: 100, cropH: 100, radius: 36, border: 12, blur: 18, pixel: 14, brightness: 100, contrast: 110, format: 'image/webp', color: '#42e6a4', text: 'Your text', maxSize: 1600 };
 const fmt = (type) => type === 'image/jpeg' ? 'jpg' : type === 'image/webp' ? 'webp' : 'png';
 const prettyBytes = n => n < 1024 ? n+' B' : n < 1048576 ? (n/1024).toFixed(1)+' KB' : (n/1048576).toFixed(2)+' MB';
@@ -38,7 +43,8 @@ const prettyBytes = n => n < 1024 ? n+' B' : n < 1048576 ? (n/1024).toFixed(1)+'
 export default function App() {
   const [file,setFile] = useState(null);
   const [source,setSource] = useState(null);
-  const [active,setActive] = useState('resize');
+  const [active,setActive] = useState(()=>routeToolId() || 'resize');
+  const [isToolPage,setIsToolPage] = useState(()=>Boolean(routeToolId()));
   const [settings,setSettings] = useState(defaults);
   const [output,setOutput] = useState(null);
   const [busy,setBusy] = useState(false);
@@ -64,7 +70,12 @@ export default function App() {
     if (window.matchMedia('(display-mode: standalone)').matches) setIsInstalled(true);
     return ()=> { window.removeEventListener('beforeinstallprompt',before); window.removeEventListener('appinstalled',installed); };
   },[]);
-  useEffect(()=>{ document.title = active ? tool[1]+' — FreeImage' : 'FreeImage — Your images. Your device.'; },[active,tool]);
+  useEffect(()=>{ document.title = isToolPage ? tool[1]+' — FreeImage' : 'FreeImage — Your images. Your device.'; },[active,tool,isToolPage]);
+  useEffect(()=>{
+    const syncRoute = () => { const id=routeToolId(); setIsToolPage(Boolean(id)); if(id) setActive(id); };
+    window.addEventListener('popstate',syncRoute);
+    return ()=>window.removeEventListener('popstate',syncRoute);
+  },[]);
   useEffect(()=>{ if(source) drawPreview(source); },[source,markups,settings,active]);
 
   function drawPreview(img) {
@@ -166,13 +177,15 @@ export default function App() {
   }
   function downloadOutput(){if(!output)return;const a=document.createElement('a');a.href=output.url;a.download=output.name;a.click();}
   function reset(){setFile(null);setSource(null);setOutput(null);setMarkups([]);setNotice('');if(fileRef.current)fileRef.current.value='';}
+  function navigateTool(id){window.history.pushState({},'', '/'+routeSlug(id));setActive(id);setIsToolPage(true);setNotice('');setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'});}
+  function navigateHome(){window.history.pushState({},'', '/');setIsToolPage(false);setActive('resize');reset();setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'});}
   const dimensions=source?source.naturalWidth+' × '+source.naturalHeight:'No image loaded';
   const selectedToolTitle=tool[1];
   return <div className="app-shell">
     <div className="ambient ambient-one"/><div className="ambient ambient-two"/>
     <header className="navbar">
-      <a className="brand" href="/" onClick={e=>{e.preventDefault();setActive('resize');reset();window.scrollTo({top:0,behavior:'smooth'});}}><span className="brand-mark"><ImageIcon size={21}/></span><span>Free<span className="brand-accent">Image</span><small>THE PRIVATE IMAGE TOOLKIT</small></span></a>
-      <nav className={mobileMenu?'nav-links nav-open':'nav-links'}><a href="#tools" onClick={()=>setMobileMenu(false)}>Tools</a><a href="#privacy" onClick={()=>setMobileMenu(false)}>Privacy</a><a href="#toolkit" onClick={()=>setMobileMenu(false)}>Image toolkit</a></nav>
+      <a className="brand" href="/" onClick={e=>{e.preventDefault();navigateHome();}}><span className="brand-mark"><ImageIcon size={21}/></span><span>Free<span className="brand-accent">Image</span><small>THE PRIVATE IMAGE TOOLKIT</small></span></a>
+      <nav className={mobileMenu?'nav-links nav-open':'nav-links'}><a href={isToolPage?'/#tools':'#tools'} onClick={()=>setMobileMenu(false)}>Tools</a><a href={isToolPage?'/#privacy':'#privacy'} onClick={()=>setMobileMenu(false)}>Privacy</a><a href={isToolPage?'/#toolkit':'#toolkit'} onClick={()=>setMobileMenu(false)}>Image toolkit</a></nav>
       <div className="nav-actions">
         <button className="install-button" onClick={()=>{if(installPrompt){installPrompt.prompt();installPrompt.userChoice.then(()=>setInstallPrompt(null));}else setInstallHelp(v=>!v);}}>{isInstalled?<Check size={16}/>:<ArrowDownToLine size={16}/>} {isInstalled?'Installed':'Install app'}</button>
         {installHelp&&<div className="install-popover"><b>Install FreeImage</b><p>In Chrome or Edge, use the install icon in the address bar or browser menu. On iPhone/iPad, open in Safari → Share → Add to Home Screen.</p><button onClick={()=>setInstallHelp(false)}>Got it</button></div>}
@@ -180,7 +193,7 @@ export default function App() {
       </div>
     </header>
     <main>
-      <section className="hero">
+      {!isToolPage&&<><section className="hero">
         <div className="hero-copy"><div className="eyebrow"><span className="live-dot"/> FREE TOOLS. PRIVATE BY DESIGN.</div>
           <h1>Your images.<br/><span>Your device.</span></h1>
           <p className="hero-lede">A powerful image toolkit for everyday edits, screenshot markups and privacy cleanup — without subscriptions, uploads or nonsense.</p>
@@ -191,9 +204,10 @@ export default function App() {
       </section>
       <section className="privacy-banner" id="privacy"><div className="privacy-icon"><LockKeyhole size={23}/></div><div><h3>Your image never leaves your device.</h3><p>Editing happens locally in your browser. FreeImage does not upload your images to a processing server.</p></div><span className="privacy-status"><span/> LOCAL-FIRST</span></section>
       <section className="tools-section" id="tools"><div className="section-heading"><div><div className="eyebrow">YOUR CREATIVE TOOLBOX</div><h2>Small edits. <span>Big relief.</span></h2><p>Pick a tool, drop in an image, and make it yours.</p></div><div className="tool-count"><b>20</b><span>browser tools</span></div></div>
-        <div className="tool-groups">{groups.map((group,gi)=><div className="tool-group" key={group.title}><div className="group-title"><span className="group-index">0{gi+1}</span><h3>{group.title}</h3><span className="group-line"/></div><div className="tool-grid">{group.tools.map(([id,title,desc,Icon])=><button className={'tool-card '+(active===id?'tool-active':'')} key={id} onClick={()=>{setActive(id);setNotice('');document.getElementById('editor')?.scrollIntoView({behavior:'smooth',block:'start'});}}><span className="tool-icon"><Icon size={20}/></span><span className="tool-copy"><b>{title}</b><small>{desc}</small></span><ArrowUpRight className="tool-arrow" size={17}/></button>)}</div></div>)}</div>
+        <div className="tool-groups">{groups.map((group,gi)=><div className="tool-group" key={group.title}><div className="group-title"><span className="group-index">0{gi+1}</span><h3>{group.title}</h3><span className="group-line"/></div><div className="tool-grid">{group.tools.map(([id,title,desc,Icon])=><button className={'tool-card '+(active===id?'tool-active':'')} key={id} onClick={()=>navigateTool(id)}><span className="tool-icon"><Icon size={20}/></span><span className="tool-copy"><b>{title}</b><small>{desc}</small></span><ArrowUpRight className="tool-arrow" size={17}/></button>)}</div></div>)}</div>
       </section>
-      <section className="editor-section" id="editor"><div className="editor-heading"><div><div className="eyebrow">THE WORKSPACE</div><h2>{selectedToolTitle}</h2><p>Make a change and export a fresh copy. Your original stays untouched.</p></div><button className="subtle-button" onClick={reset}><RotateCcw size={15}/> Clear image</button></div>
+      </>}
+      <section className="editor-section" id="editor"><div className="editor-heading"><div><div className="eyebrow">{isToolPage?'TOOL WORKSPACE':'THE WORKSPACE'}</div><h2>{selectedToolTitle}</h2><p>{isToolPage?tool[2]+' — processed locally in your browser.':'Make a change and export a fresh copy. Your original stays untouched.'}</p></div><div className="editor-actions">{isToolPage&&<button className="subtle-button" onClick={navigateHome}><ArrowLeft size={15}/> All tools</button>}<button className="subtle-button" onClick={reset}><RotateCcw size={15}/> Clear image</button></div></div>
         <div className="workspace">
           <div className="upload-panel">
             <div className="panel-label"><span>01</span> SOURCE IMAGE</div>
@@ -212,7 +226,7 @@ export default function App() {
               {active==='blur'&&<Field label={'Blur strength · '+settings.blur+' px'}><input type="range" min="4" max="42" value={settings.blur} onChange={e=>update('blur',+e.target.value)}/></Field>}
               {active==='pixelate'&&<Field label={'Pixel size · '+settings.pixel+' px'}><input type="range" min="4" max="40" value={settings.pixel} onChange={e=>update('pixel',+e.target.value)}/></Field>}
               {active==='screenshot'&&<><Field label={'Brightness · '+settings.brightness+'%'}><input type="range" min="60" max="150" value={settings.brightness} onChange={e=>update('brightness',+e.target.value)}/></Field><Field label={'Contrast · '+settings.contrast+'%'}><input type="range" min="60" max="180" value={settings.contrast} onChange={e=>update('contrast',+e.target.value)}/></Field></>}
-              {isEdit&&<><div className="edit-instructions"><Paintbrush size={17}/><span>Use the add button to place a {active} marker on the image preview. You can add multiple markers.</span></div>{['text','number'].includes(active)&&<Field label={active==='number'?'Marker label':'Text label'}><input value={settings.text} onChange={e=>update('text',e.target.value)} /></Field>}<Field label="Marker color"><input type="color" value={settings.color} onChange={e=>update('color',e.target.value)}/></Field><button className="quick-button" onClick={()=>setMarkups([])}>Clear all markers</button></>}
+              {isEdit&&<><div className="edit-instructions"><Paintbrush size={17}/><span>Use the add button to place a {active} marker on the image preview. You can add multiple markers.</span></div>{['text','number'].includes(active)&&<Field label={active==='number'?'Marker label':'Text label'}><input value={settings.text} onChange={e=>update('text',e.target.value)} /></Field>}<Field label="Marker color"><input type="color" value={settings.color} onChange={e=>update('color',e.target.value)}/></Field><button className="quick-button" onClick={addMarkup}>Add another marker</button><button className="quick-button" onClick={()=>setMarkups([])}>Clear all markers</button></>}
               {['upscale','sharpen','remove-metadata','image-pdf','background'].includes(active)&&<div className="tool-explainer"><Sparkles size={18}/><span>{active==='upscale'?'Doubles the pixel dimensions using browser resampling; this is not generative AI upscaling.':active==='sharpen'?'Applies a local contrast enhancement to make edges appear crisper.':active==='remove-metadata'?'Re-encodes the image through canvas, removing EXIF and other embedded metadata.':active==='image-pdf'?'Creates a single-page PDF sized to your image.': 'Makes a similarly coloured background connected to the image edges transparent. Best for plain, solid backgrounds; inspect the result before downloading.'}</span></div>}
               <button className="process-button" disabled={busy} onClick={process}>{busy?<span className="spinner"/>:isEdit?<Plus size={18}/>:<WandSparkles size={18}/>} {busy?'Processing…':isEdit&&!markups.length?'Add marker to preview':isEdit?'Export marked image':'Process image'} <ArrowRight size={17}/></button>
             </div>}
@@ -223,9 +237,10 @@ export default function App() {
           {output&&<div className="output-row"><div className="output-icon"><FileImage size={20}/></div><div className="output-meta"><b>{output.name}</b><span>{prettyBytes(output.size)} · Ready to save</span></div><button className="download-button" onClick={downloadOutput}><Download size={17}/> Download</button></div>}
         </div>
       </section>
-      <section className="toolkit-section" id="toolkit"><div className="toolkit-card"><div className="toolkit-copy"><div className="eyebrow">THE SCREENSHOT TOOLKIT</div><h2>Share the point.<br/><span>Not the private bits.</span></h2><p>Mark up screenshots with arrows, shapes, highlights, text and numbered steps. Automatic detection of sensitive text is not included yet, so manually blur or pixelate private details before sharing.</p><div className="toolkit-tags"><span><Check size={13}/> Mark up</span><span><Check size={13}/> Redact carefully</span><span><Check size={13}/> Download clean</span></div><button className="primary-button" onClick={()=>{setActive('blur');document.getElementById('editor')?.scrollIntoView({behavior:'smooth'});}}>Open image toolkit <ArrowRight size={16}/></button></div><div className="redaction-mock"><div className="mock-window"><div className="mock-bar"><span/><span/><span/><small>Screenshot.png</small></div><div className="mock-doc"><div className="mock-avatar">AK</div><div className="mock-line line-long"/><div className="mock-line line-short"/><div className="mock-data"><span>EMAIL</span><b>aarav@example.com</b><div className="redact-bar"/></div><div className="mock-data"><span>API KEY</span><b>sk_live_••••••••••</b><div className="redact-bar redacted-short"/></div><div className="mock-verified"><ShieldCheck size={15}/> Redaction preview</div></div></div><div className="mock-stamp"><ShieldCheck size={18}/><span><b>Review before sharing</b><small>Nothing sent to a server</small></span></div></div></div></section>
+      {!isToolPage&&<section className="toolkit-section" id="toolkit"><div className="toolkit-card"><div className="toolkit-copy"><div className="eyebrow">THE SCREENSHOT TOOLKIT</div><h2>Share the point.<br/><span>Not the private bits.</span></h2><p>Mark up screenshots with arrows, shapes, highlights, text and numbered steps. Automatic detection of sensitive text is not included yet, so manually blur or pixelate private details before sharing.</p><div className="toolkit-tags"><span><Check size={13}/> Mark up</span><span><Check size={13}/> Redact carefully</span><span><Check size={13}/> Download clean</span></div><button className="primary-button" onClick={()=>{setActive('blur');document.getElementById('editor')?.scrollIntoView({behavior:'smooth'});}}>Open image toolkit <ArrowRight size={16}/></button></div><div className="redaction-mock"><div className="mock-window"><div className="mock-bar"><span/><span/><span/><small>Screenshot.png</small></div><div className="mock-doc"><div className="mock-avatar">AK</div><div className="mock-line line-long"/><div className="mock-line line-short"/><div className="mock-data"><span>EMAIL</span><b>aarav@example.com</b><div className="redact-bar"/></div><div className="mock-data"><span>API KEY</span><b>sk_live_••••••••••</b><div className="redact-bar redacted-short"/></div><div className="mock-verified"><ShieldCheck size={15}/> Redaction preview</div></div></div><div className="mock-stamp"><ShieldCheck size={18}/><span><b>Review before sharing</b><small>Nothing sent to a server</small></span></div></div></div></section>
+      }
     </main>
-    <footer className="footer"><div className="footer-main"><div className="footer-brand"><a className="brand" href="/"><span className="brand-mark"><ImageIcon size={20}/></span><span>Free<span className="brand-accent">Image</span><small>THE PRIVATE IMAGE TOOLKIT</small></span></a><p>Useful software. Without the nonsense.</p><span className="building"><span/> Building useful things</span></div><div className="footer-column"><b>Explore</b><a href="#tools">All image tools</a><a href="#toolkit">Screenshot toolkit</a><a href="#privacy">Privacy promise</a></div><div className="footer-column"><b>FreeToolz</b><a href="https://free-pdf-delta.vercel.app/" target="_blank" rel="noreferrer">FreePDF ↗</a><a href="https://github.com/avada-kedavra62442/FreeImage" target="_blank" rel="noreferrer">GitHub repository ↗</a><a href="mailto:aarav.krish62442@gmail.com">Feedback / email ↗</a></div><div className="footer-social"><a href="https://github.com/avada-kedavra62442/" aria-label="GitHub" target="_blank" rel="noreferrer">GH</a><a href="mailto:aarav.krish62442@gmail.com" aria-label="Email">@</a><a href="https://www.linkedin.com/in/aarav-krish-665702440/" aria-label="LinkedIn" target="_blank" rel="noreferrer">in</a></div></div><div className="footer-bottom"><span>© {new Date().getFullYear()} FreeImage. Made to be useful.</span><span><LockKeyhole size={13}/> Your files stay yours.</span></div></footer>
+    <footer className="footer"><div className="footer-main"><div className="footer-brand"><a className="brand" href="/"><span className="brand-mark"><ImageIcon size={20}/></span><span>Free<span className="brand-accent">Image</span><small>THE PRIVATE IMAGE TOOLKIT</small></span></a><p>Useful software. Without the nonsense.</p><span className="building"><span/> Building useful things</span></div><div className="footer-column"><b>Explore</b><a href="/#tools">All image tools</a><a href="/#toolkit">Screenshot toolkit</a><a href="/#privacy">Privacy promise</a><a href="mailto:aarav.krish62442@gmail.com?subject=FreeImage%20Feedback">Feedback</a></div><div className="footer-column"><b>FreeToolz</b><a href="https://free-pdf-delta.vercel.app/" target="_blank" rel="noreferrer">FreePDF ↗</a><a href="https://github.com/avada-kedavra62442/FreeImage" target="_blank" rel="noreferrer">GitHub repository ↗</a><a href="mailto:aarav.krish62442@gmail.com">Developer contact ↗</a><a href="/#privacy">Privacy Policy</a></div><div className="footer-social"><a href="https://github.com/avada-kedavra62442/" aria-label="GitHub" target="_blank" rel="noreferrer"><Github size={17}/></a><a href="mailto:aarav.krish62442@gmail.com" aria-label="Email"><Mail size={17}/></a><a href="https://www.linkedin.com/in/aarav-krish-665702440/" aria-label="LinkedIn" target="_blank" rel="noreferrer"><Linkedin size={17}/></a></div></div><div className="footer-bottom"><span>© {new Date().getFullYear()} FreeImage. Made to be useful.</span><span><LockKeyhole size={13}/> Your files stay yours.</span></div></footer>
   </div>;
 }
 function Field({label,children}){return <label className="field"><span>{label}</span>{children}</label>;}
