@@ -25,7 +25,7 @@ const groups = [
     ['circle','Circle marker','Circle a detail that matters',Circle],
     ['text','Add text','Label an image with a short note',FileText],
     ['number','Number markers','Add numbered steps to a walkthrough',BadgeCheck],
-    ['background','Transparent background','Prepare a transparent canvas for a cutout',Eraser],
+    ['background','Remove solid background','Make a simple, edge-connected solid background transparent',Eraser],
     ['sharpen','Sharpen image','Boost perceived detail with a local filter',Zap],
     ['upscale','Upscale 2×','Enlarge with high-quality browser resampling',Maximize2],
   ]},
@@ -117,6 +117,22 @@ export default function App() {
     if(active==='sharpen') ctx.filter='contrast(118%) saturate(108%)';
     ctx.drawImage(source,sx,sy,sw,sh,0,0,w,h);
     ctx.filter='none';
+    if(active==='background'){
+      const imageData=ctx.getImageData(0,0,w,h), data=imageData.data;
+      const seed=[data[0],data[1],data[2]], tolerance=58;
+      const visited=new Uint8Array(w*h), stack=[];
+      for(let x=0;x<w;x++){stack.push(x);stack.push((h-1)*w+x);}
+      for(let y=1;y<h-1;y++){stack.push(y*w);stack.push(y*w+w-1);}
+      while(stack.length){
+        const p=stack.pop(); if(p<0||p>=w*h||visited[p])continue; visited[p]=1;
+        const i=p*4, dr=data[i]-seed[0], dg=data[i+1]-seed[1], db=data[i+2]-seed[2];
+        if(Math.sqrt(dr*dr+dg*dg+db*db)>tolerance)continue;
+        data[i+3]=0;
+        const x=p%w,y=(p/w)|0;
+        if(x>0)stack.push(p-1);if(x<w-1)stack.push(p+1);if(y>0)stack.push(p-w);if(y<h-1)stack.push(p+w);
+      }
+      ctx.putImageData(imageData,0,0);
+    }
     if(active==='rounded'||active==='background') ctx.restore();
     if(active==='borders'){const b=Math.max(0,+settings.border||0);const out=document.createElement('canvas');out.width=w+b*2;out.height=h+b*2;const o=out.getContext('2d');o.fillStyle=settings.color;o.fillRect(0,0,out.width,out.height);o.drawImage(c,b,b);return out;}
     if(active==='pixelate'||active==='blur'){
@@ -124,7 +140,7 @@ export default function App() {
       if(active==='pixelate'){const tiny=document.createElement('canvas');tiny.width=Math.max(1,Math.round(area.w/settings.pixel));tiny.height=Math.max(1,Math.round(area.h/settings.pixel));tiny.getContext('2d').drawImage(c,area.x,area.y,area.w,area.h,0,0,tiny.width,tiny.height);ctx.imageSmoothingEnabled=false;ctx.drawImage(tiny,0,0,tiny.width,tiny.height,area.x,area.y,area.w,area.h);ctx.imageSmoothingEnabled=true;}
       else {const patch=document.createElement('canvas');patch.width=area.w;patch.height=area.h;patch.getContext('2d').filter='blur('+settings.blur+'px)';patch.getContext('2d').drawImage(c,area.x,area.y,area.w,area.h,0,0,area.w,area.h);ctx.drawImage(patch,area.x,area.y);}
     }
-    if(markups.length){const scaleX=w/(source.naturalWidth||w),scaleY=h/(source.naturalHeight||h);markups.forEach(m=>{const x=m.x*w,y=m.y*h,mw=m.w*w,mh=m.h*h;ctx.strokeStyle=m.color;ctx.fillStyle=m.color;ctx.lineWidth=Math.max(3,w/300);if(m.type==='rectangle')ctx.strokeRect(x,y,mw,mh);if(m.type==='circle'){ctx.beginPath();ctx.ellipse(x+mw/2,y+mh/2,mw/2,mh/2,0,0,Math.PI*2);ctx.stroke();}if(m.type==='highlight'){ctx.globalAlpha=.25;ctx.fillRect(x,y,mw,mh);ctx.globalAlpha=1;}if(m.type==='arrow'){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+mw,y+mh);ctx.stroke();ctx.beginPath();ctx.moveTo(x+mw,y+mh);ctx.lineTo(x+mw-12,y+mh-3);ctx.lineTo(x+mw-3,y+mh-12);ctx.closePath();ctx.fill();}if(m.type==='text'||m.type==='number'){ctx.font='bold '+Math.max(20,w/35)+'px sans-serif';ctx.fillText(m.text,x,y);}});}
+    if(markups.length){markups.forEach(m=>{const x=m.x*w,y=m.y*h,mw=m.w*w,mh=m.h*h;ctx.strokeStyle=m.color;ctx.fillStyle=m.color;ctx.lineWidth=Math.max(3,w/300);if(m.type==='rectangle')ctx.strokeRect(x,y,mw,mh);if(m.type==='circle'){ctx.beginPath();ctx.ellipse(x+mw/2,y+mh/2,mw/2,mh/2,0,0,Math.PI*2);ctx.stroke();}if(m.type==='highlight'){ctx.globalAlpha=.25;ctx.fillRect(x,y,mw,mh);ctx.globalAlpha=1;}if(m.type==='arrow'){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+mw,y+mh);ctx.stroke();ctx.beginPath();ctx.moveTo(x+mw,y+mh);ctx.lineTo(x+mw-12,y+mh-3);ctx.lineTo(x+mw-3,y+mh-12);ctx.closePath();ctx.fill();}if(m.type==='text'||m.type==='number'){ctx.font='bold '+Math.max(20,w/35)+'px sans-serif';ctx.fillText(m.text,x,y);}});}
     return c;
   }
   async function process() {
@@ -197,7 +213,7 @@ export default function App() {
               {active==='pixelate'&&<Field label={'Pixel size · '+settings.pixel+' px'}><input type="range" min="4" max="40" value={settings.pixel} onChange={e=>update('pixel',+e.target.value)}/></Field>}
               {active==='screenshot'&&<><Field label={'Brightness · '+settings.brightness+'%'}><input type="range" min="60" max="150" value={settings.brightness} onChange={e=>update('brightness',+e.target.value)}/></Field><Field label={'Contrast · '+settings.contrast+'%'}><input type="range" min="60" max="180" value={settings.contrast} onChange={e=>update('contrast',+e.target.value)}/></Field></>}
               {isEdit&&<><div className="edit-instructions"><Paintbrush size={17}/><span>Use the add button to place a {active} marker on the image preview. You can add multiple markers.</span></div>{['text','number'].includes(active)&&<Field label={active==='number'?'Marker label':'Text label'}><input value={settings.text} onChange={e=>update('text',e.target.value)} /></Field>}<Field label="Marker color"><input type="color" value={settings.color} onChange={e=>update('color',e.target.value)}/></Field><button className="quick-button" onClick={()=>setMarkups([])}>Clear all markers</button></>}
-              {['upscale','sharpen','remove-metadata','image-pdf','background'].includes(active)&&<div className="tool-explainer"><Sparkles size={18}/><span>{active==='upscale'?'Doubles the pixel dimensions using browser resampling; this is not generative AI upscaling.':active==='sharpen'?'Applies a local contrast enhancement to make edges appear crisper.':active==='remove-metadata'?'Re-encodes the image through canvas, removing EXIF and other embedded metadata.':active==='image-pdf'?'Creates a single-page PDF sized to your image.': 'Creates a transparent PNG canvas from the uploaded image; it does not automatically detect or remove the subject background.'}</span></div>}
+              {['upscale','sharpen','remove-metadata','image-pdf','background'].includes(active)&&<div className="tool-explainer"><Sparkles size={18}/><span>{active==='upscale'?'Doubles the pixel dimensions using browser resampling; this is not generative AI upscaling.':active==='sharpen'?'Applies a local contrast enhancement to make edges appear crisper.':active==='remove-metadata'?'Re-encodes the image through canvas, removing EXIF and other embedded metadata.':active==='image-pdf'?'Creates a single-page PDF sized to your image.': 'Makes a similarly coloured background connected to the image edges transparent. Best for plain, solid backgrounds; inspect the result before downloading.'}</span></div>}
               <button className="process-button" disabled={busy} onClick={process}>{busy?<span className="spinner"/>:isEdit?<Plus size={18}/>:<WandSparkles size={18}/>} {busy?'Processing…':isEdit?'Add marker to preview':'Process image'} <ArrowRight size={17}/></button>
             </div>}
           </div>
