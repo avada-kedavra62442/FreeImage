@@ -14,8 +14,8 @@ const groups = [
     ['image-pdf','Image to PDF','Turn an image into a downloadable PDF',FileText],
   ]},
   { title: 'Privacy & pixel tools', tools: [
-    ['blur','Blur an area','Soften sensitive details with a brush-sized blur',Blend],
-    ['pixelate','Pixelate an area','Mosaic a region before sharing',ScanFace],
+    ['blur','Blur central area','Blur a central region before sharing',Blend],
+    ['pixelate','Pixelate central area','Mosaic a central region before sharing',ScanFace],
     ['highlight','Highlight area','Draw attention to a part of the image',Sparkles],
     ['screenshot','Screenshot cleanup','Tidy up screenshots with contrast and brightness',WandSparkles],
   ]},
@@ -53,7 +53,7 @@ export default function App() {
   const fileRef = useRef(null);
   const [dragging,setDragging] = useState(false);
   const tool = allTools.find(t=>t[0]===active) || allTools[0];
-  const isEdit = ['blur','pixelate','highlight','arrow','rectangle','circle','text','number'].includes(active);
+  const isEdit = ['highlight','arrow','rectangle','circle','text','number'].includes(active);
   const hasFile = Boolean(source);
 
   useEffect(()=>{
@@ -121,15 +121,16 @@ export default function App() {
       const imageData=ctx.getImageData(0,0,w,h), data=imageData.data;
       const seed=[data[0],data[1],data[2]], tolerance=58;
       const visited=new Uint8Array(w*h), stack=[];
-      for(let x=0;x<w;x++){stack.push(x);stack.push((h-1)*w+x);}
-      for(let y=1;y<h-1;y++){stack.push(y*w);stack.push(y*w+w-1);}
+      const enqueue=p=>{if(p>=0&&p<w*h&&!visited[p]){visited[p]=1;stack.push(p);}};
+      for(let x=0;x<w;x++){enqueue(x);enqueue((h-1)*w+x);}
+      for(let y=1;y<h-1;y++){enqueue(y*w);enqueue(y*w+w-1);}
       while(stack.length){
-        const p=stack.pop(); if(p<0||p>=w*h||visited[p])continue; visited[p]=1;
+        const p=stack.pop();
         const i=p*4, dr=data[i]-seed[0], dg=data[i+1]-seed[1], db=data[i+2]-seed[2];
         if(Math.sqrt(dr*dr+dg*dg+db*db)>tolerance)continue;
         data[i+3]=0;
         const x=p%w,y=(p/w)|0;
-        if(x>0)stack.push(p-1);if(x<w-1)stack.push(p+1);if(y>0)stack.push(p-w);if(y<h-1)stack.push(p+w);
+        if(x>0)enqueue(p-1);if(x<w-1)enqueue(p+1);if(y>0)enqueue(p-w);if(y<h-1)enqueue(p+w);
       }
       ctx.putImageData(imageData,0,0);
     }
@@ -145,7 +146,7 @@ export default function App() {
   }
   async function process() {
     if(!source){setNotice('Upload an image first to start editing.');return;}
-    if(isEdit){addMarkup();return;}
+    if(isEdit&&!markups.length){addMarkup();return;}
     setBusy(true);setNotice('');
     try {
       const c=getCanvas();
@@ -214,7 +215,7 @@ export default function App() {
               {active==='screenshot'&&<><Field label={'Brightness · '+settings.brightness+'%'}><input type="range" min="60" max="150" value={settings.brightness} onChange={e=>update('brightness',+e.target.value)}/></Field><Field label={'Contrast · '+settings.contrast+'%'}><input type="range" min="60" max="180" value={settings.contrast} onChange={e=>update('contrast',+e.target.value)}/></Field></>}
               {isEdit&&<><div className="edit-instructions"><Paintbrush size={17}/><span>Use the add button to place a {active} marker on the image preview. You can add multiple markers.</span></div>{['text','number'].includes(active)&&<Field label={active==='number'?'Marker label':'Text label'}><input value={settings.text} onChange={e=>update('text',e.target.value)} /></Field>}<Field label="Marker color"><input type="color" value={settings.color} onChange={e=>update('color',e.target.value)}/></Field><button className="quick-button" onClick={()=>setMarkups([])}>Clear all markers</button></>}
               {['upscale','sharpen','remove-metadata','image-pdf','background'].includes(active)&&<div className="tool-explainer"><Sparkles size={18}/><span>{active==='upscale'?'Doubles the pixel dimensions using browser resampling; this is not generative AI upscaling.':active==='sharpen'?'Applies a local contrast enhancement to make edges appear crisper.':active==='remove-metadata'?'Re-encodes the image through canvas, removing EXIF and other embedded metadata.':active==='image-pdf'?'Creates a single-page PDF sized to your image.': 'Makes a similarly coloured background connected to the image edges transparent. Best for plain, solid backgrounds; inspect the result before downloading.'}</span></div>}
-              <button className="process-button" disabled={busy} onClick={process}>{busy?<span className="spinner"/>:isEdit?<Plus size={18}/>:<WandSparkles size={18}/>} {busy?'Processing…':isEdit?'Add marker to preview':'Process image'} <ArrowRight size={17}/></button>
+              <button className="process-button" disabled={busy} onClick={process}>{busy?<span className="spinner"/>:isEdit?<Plus size={18}/>:<WandSparkles size={18}/>} {busy?'Processing…':isEdit&&!markups.length?'Add marker to preview':isEdit?'Export marked image':'Process image'} <ArrowRight size={17}/></button>
             </div>}
           </div>
         </div>
