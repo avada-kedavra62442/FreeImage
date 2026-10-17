@@ -41,3 +41,6 @@ dialog[open],[role="dialog"],[role="listbox"],[role="menu"]{isolation:isolate}
 .ft-footer-bottom{max-width:1240px;margin:auto;padding-top:16px;border-top:1px solid rgba(156,210,179,.13);display:flex;justify-content:space-between;gap:12px;color:#718c7c;font-size:10px}
 @media(max-width:720px){.ft-footer-main{grid-template-columns:repeat(2,minmax(0,1fr));gap:25px 16px}.ft-footer-bottom{flex-direction:column}}
 @media(max-width:420px){.ft-footer-main{grid-template-columns:1fr 1fr}.ft-universal-footer{padding-left:16px;padding-right:16px}}
+
+/* Bring custom pickers, popovers, menus, and modal layers above cards and sticky chrome. */
+.MuiPopover-root,.MuiPopper-root,.MuiPickersPopper-root,.MuiModal-root,.ant-picker-dropdown,.ant-select-dropdown,.ant-dropdown,.ant-popover,.ant-tooltip,.ant-modal-root,.select__menu,.tippy-box,.flatpickr-calendar.open,.react-datepicker-popper,.datepicker-dropdown,.calendar-popup,.calendar-picker,.calendar-overlay,.date-picker-popup,.dropdown-content,.dropdown-panel,.popover-content,.modal-backdrop,.modal-dialog,[data-radix-popper-content-wrapper],[data-floating-ui-portal],[data-state="open"][role="dialog"],[data-state="open"][role="listbox"]{z-index:2147483000!important}
