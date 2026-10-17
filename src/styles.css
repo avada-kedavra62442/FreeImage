@@ -25,7 +25,6 @@ button:disabled{cursor:not-allowed}
 /* FreeToolz universal overlay layer + shared footer foundation */
 :root{--ft-overlay-z:2147483000}
 dialog,[role="dialog"],[role="listbox"],[role="menu"],[data-radix-popper-content-wrapper],[data-floating-ui-portal],.react-datepicker-popper,.flatpickr-calendar,.datepicker,.date-picker,.calendar-popover,.calendar-dropdown,.dropdown-menu,.select-dropdown,.popover,.tooltip,.modal,.overlay-panel,.command-menu{z-index:var(--ft-overlay-z)!important}
-[data-radix-popper-content-wrapper],[data-floating-ui-portal],.react-datepicker-popper,.flatpickr-calendar,.calendar-popover,.calendar-dropdown,.dropdown-menu,.select-dropdown,.popover,.command-menu{position:fixed!important}
 dialog[open],[role="dialog"],[role="listbox"],[role="menu"]{isolation:isolate}
 .ft-universal-footer{position:relative;z-index:1;margin-top:64px;padding:38px clamp(18px,5vw,72px) 18px;border-top:1px solid rgba(156,210,179,.16);background:linear-gradient(180deg,#08150f,#050b08);color:#e7f4eb;font-family:inherit}
 .ft-footer-main{max-width:1240px;margin:auto;display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr;gap:28px;padding-bottom:30px}
