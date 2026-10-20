@@ -11,7 +11,7 @@ const TOOLSET = [
   { id: 'blur', label: 'Blur area', Icon: Aperture, group: 'Retouch' },
   { id: 'pixelate', label: 'Pixelate', Icon: Circle, group: 'Retouch' },
 ];
-const INITIAL_ADJUST = { brightness: 100, contrast: 100, saturation: 100, warmth: 0, blur: 0, grayscale: 0, sepia: 0 };
+const INITIAL_ADJUST = { brightness: 100, contrast: 100, saturation: 100, warmth: 0, blur: 0, grayscale: 0, sepia: 0, invert: 0, hue: 0 };
 const uid = () => 'layer-' + Math.random().toString(36).slice(2, 10);
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
@@ -130,7 +130,7 @@ export default function App() {
     target.width = sw; target.height = sh;
     const ctx = target.getContext('2d', { willReadFrequently: true });
     ctx.clearRect(0, 0, sw, sh);
-    ctx.filter = 'brightness(' + adjust.brightness + '%) contrast(' + adjust.contrast + '%) saturate(' + adjust.saturation + '%) blur(' + adjust.blur + 'px) grayscale(' + adjust.grayscale + '%) sepia(' + adjust.sepia + '%)';
+    ctx.filter = 'brightness(' + adjust.brightness + '%) contrast(' + adjust.contrast + '%) saturate(' + adjust.saturation + '%) blur(' + adjust.blur + 'px) grayscale(' + adjust.grayscale + '%) sepia(' + adjust.sepia + '%) invert(' + adjust.invert + '%) hue-rotate(' + adjust.hue + 'deg)';
     ctx.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
     ctx.filter = 'none';
     if (adjust.warmth !== 0) {
@@ -162,6 +162,22 @@ export default function App() {
   function changeAdjust(key, value) {
     commitHistory();
     setAdjust((old) => ({ ...old, [key]: Number(value) }));
+  }
+
+  function applyPreset(preset) {
+    if (!image) { setNotice('Open an image before applying a look.'); return; }
+    const presets = {
+      original: INITIAL_ADJUST,
+      vivid: { ...INITIAL_ADJUST, contrast: 112, saturation: 138, brightness: 103 },
+      portrait: { ...INITIAL_ADJUST, brightness: 106, contrast: 104, saturation: 108, warmth: 8 },
+      vintage: { ...INITIAL_ADJUST, contrast: 92, saturation: 78, warmth: 18, sepia: 24 },
+      mono: { ...INITIAL_ADJUST, contrast: 112, grayscale: 100 },
+      negative: { ...INITIAL_ADJUST, invert: 100 },
+      cool: { ...INITIAL_ADJUST, warmth: -22, hue: 8, contrast: 106 },
+    };
+    commitHistory();
+    setAdjust(presets[preset] || INITIAL_ADJUST);
+    setNotice(({ vivid: 'Vivid look applied.', portrait: 'Portrait look applied.', vintage: 'Vintage look applied.', mono: 'Black-and-white look applied.', negative: 'Negative colours applied.', cool: 'Cool colour grade applied.', original: 'Original adjustments restored.' })[preset] || 'Look applied.');
   }
 
   function addTextLayer() {
@@ -385,8 +401,12 @@ export default function App() {
           {panel === 'adjust' && <>
             <div className="pro-section-title">Colour & light <Sparkles size={14} /></div>
             <div className="pro-panel-note">Adjustments are rendered live and applied to the exported image. Your source file is never overwritten.</div>
-            {[['brightness','Brightness',0,200,1,100],['contrast','Contrast',0,200,1,100],['saturation','Saturation',0,200,1,100],['warmth','Temperature',-100,100,1,0],['blur','Soft blur',0,12,.5,0],['grayscale','Grayscale',0,100,1,0],['sepia','Sepia',0,100,1,0]].map(([key,label,min,max,step,base]) => <label className="pro-field" key={key}><span className="pro-field-row"><span>{label}</span><span className="pro-value">{adjust[key]}{key === 'warmth' ? '' : '%'}</span></span><input type="range" min={min} max={max} step={step} value={adjust[key]} onChange={(event) => changeAdjust(key, event.target.value)} disabled={!image} /></label>)}
-            <button className="pro-btn" style={{ width: '100%' }} onClick={() => { commitHistory(); setAdjust(INITIAL_ADJUST); }}>Reset adjustments</button>
+            <div className="pro-section-title">One-click looks</div>
+            <div className="pro-chip-row" style={{ marginBottom: 18 }}>
+              {[['vivid','Vivid'],['portrait','Portrait'],['vintage','Vintage'],['mono','B&W'],['negative','Negative'],['cool','Cool tone'],['original','Reset']].map(([id,label]) => <button className="pro-chip" key={id} onClick={() => applyPreset(id)} disabled={!image}>{label}</button>)}
+            </div>
+            {[['brightness','Brightness',0,200,1,'%'],['contrast','Contrast',0,200,1,'%'],['saturation','Saturation',0,200,1,'%'],['warmth','Temperature',-100,100,1,''],['blur','Soft blur',0,12,.5,'px'],['grayscale','Grayscale',0,100,1,'%'],['sepia','Sepia',0,100,1,'%'],['invert','Invert colours',0,100,1,'%'],['hue','Hue shift',0,360,1,'°']].map(([key,label,min,max,step,unit]) => <label className="pro-field" key={key}><span className="pro-field-row"><span>{label}</span><span className="pro-value">{adjust[key]}{unit}</span></span><input type="range" min={min} max={max} step={step} value={adjust[key]} onChange={(event) => changeAdjust(key, event.target.value)} disabled={!image} /></label>)}
+            <button className="pro-btn" style={{ width: '100%' }} onClick={() => { commitHistory(); setAdjust(INITIAL_ADJUST); }} disabled={!image}>Reset adjustments</button>
           </>}
 
           {panel === 'properties' && <>
