@@ -1,11 +1,9 @@
 # FreeImage
 
-Free, browser-based image editing and privacy toolkit. Image processing runs locally in your browser; image content is not uploaded to a processing server.
+FreeImage is a browser-first image editing workspace with a premium dark glass interface, layer-based edits, image adjustments, and PNG/JPEG/WebP export.
 
-## Run locally
+## AI image editing
 
-`npm install` then `npm run dev`.
+The AI Studio calls the Vercel serverless route `/api/ai`, which uses OpenAI's image editing API. Configure `OPENAI_API_KEY` in the Vercel project's Environment Variables and redeploy before using AI edits. AI API usage may incur charges. Without a key, the interface shows a configuration message rather than pretending AI worked.
 
-## Notes
-
-The solid-background remover is a simple edge-connected color tool, not AI segmentation. Upscaling uses browser resampling. Automatic sensitive-text detection is not implemented in this initial build.
+Standard canvas edits run in the browser. When AI editing is explicitly requested, a resized copy of the image and the prompt are sent to the configured AI provider. The original local file is not overwritten.

@@ -17,6 +17,9 @@ const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
 export default function App() {
   const [file, setFile] = useState(null);
+  const [showEditor, setShowEditor] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiWorking, setAiWorking] = useState(false);
   const [image, setImage] = useState(null);
   const [tool, setTool] = useState('move');
   const [panel, setPanel] = useState('layers');
@@ -238,6 +241,25 @@ export default function App() {
     setLayers((items) => [...items, layer]); setSelected(layer.id); setNotice(layer.name + ' added as an editable layer.');
   }
 
+  async function runAIEdit() {
+    if (!image) { setNotice('Open an image before using AI editing.'); return; }
+    if (!aiPrompt.trim()) { setNotice('Describe the change you want AI to make.'); return; }
+    setAiWorking(true); setNotice('Preparing image for AI editing…');
+    try {
+      const scale = Math.min(1, 1024 / image.naturalWidth, 1024 / image.naturalHeight);
+      const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(image.naturalWidth * scale)); c.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      c.getContext('2d').drawImage(image, 0, 0, c.width, c.height);
+      const response = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: c.toDataURL('image/jpeg', 0.86), prompt: aiPrompt.trim() }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'AI editing could not complete.');
+      if (!data.image) throw new Error('The AI service returned no edited image.');
+      const result = new Image();
+      result.onload = () => { setImage(result); setLayers([{ id: uid(), name: 'AI edited image', type: 'image', visible: true, locked: true, opacity: 100 }]); setSelected(null); setCrop({x:0,y:0,w:100,h:100}); setHistory([]); setFuture([]); setNotice('AI edit ready. Your original local file has not been overwritten.'); setAiWorking(false); };
+      result.onerror = () => { setNotice('The AI-generated image could not be opened.'); setAiWorking(false); };
+      result.src = data.image;
+    } catch (error) { setNotice(error.message || 'AI editing failed. Check the AI configuration.'); setAiWorking(false); }
+  }
+
   async function exportImage() {
     if (!image) { setNotice('Open an image before exporting.'); return; }
     setBusy(true); setNotice('');
@@ -277,7 +299,7 @@ export default function App() {
       <a href="/" className="pro-brand" onClick={(event) => event.preventDefault()}><span className="pro-mark"><ImageIcon size={19} /></span><span>FreeImage<small>PRO IMAGE WORKSPACE</small></span></a>
       <div className="pro-divider" />
       <div className="pro-file-actions">
-        <button className="pro-btn" onClick={() => inputRef.current && inputRef.current.click()}><Upload size={14} /> Open image</button>
+        <button className="pro-btn" onClick={() => { setShowEditor(true); inputRef.current && inputRef.current.click(); }}><Upload size={14} /> Open image</button>
         <input ref={inputRef} className="pro-hidden" type="file" accept="image/*" onChange={(event) => loadImage(event.target.files && event.target.files[0])} />
         <button className="pro-btn" onClick={undo} disabled={!history.length} title="Undo"><Undo2 size={15} /></button>
         <button className="pro-btn" onClick={redo} disabled={!future.length} title="Redo"><Redo2 size={15} /></button>
@@ -290,7 +312,15 @@ export default function App() {
       </div>
     </header>
 
-    <div className="pro-workspace">
+    {!showEditor && <main className="fi-home">
+<nav className="fi-home-nav"><a className="fi-home-brand" href="/" onClick={e=>e.preventDefault()}><span className="pro-mark"><ImageIcon size={19}/></span><span>FreeImage<small>THE CREATIVE WORKSPACE</small></span></a><div className="fi-home-links"><a href="#fi-features">Features</a><a href="#fi-tools">Tools</a><a href="#fi-ai">AI Studio</a></div><button className="pro-btn pro-primary" onClick={()=>setShowEditor(true)}>Open Studio <ArrowRight size={15}/></button></nav>
+<section className="fi-hero"><div className="fi-hero-copy"><div className="fi-eyebrow"><span/> ONE WORKSPACE. LIMITLESS EDITS.</div><h1>Make every image<br/><em>look intentional.</em></h1><p>A complete creative workspace for editing, retouching, layers, typography, colour grading and AI-assisted transformations. No maze of tiny tools. Just one powerful editor.</p><div className="fi-hero-actions"><button className="fi-cta" onClick={()=>setShowEditor(true)}><Sparkles size={17}/> Enter the workspace <ArrowRight size={16}/></button><a href="#fi-features">Explore the features ↓</a></div><div className="fi-trust"><span><LockKeyhole size={15}/> Local-first editing</span><span><Layers size={15}/> Layer workflow</span><span><WandSparkles size={15}/> AI-ready studio</span></div></div>
+<div className="fi-hero-visual"><div className="fi-mock-window"><div className="fi-mock-top"><span/><span/><span/><b>FREEIMAGE · STUDIO</b><i>100%</i></div><div className="fi-mock-body"><div className="fi-mock-tools"><span>↖</span><span>⌗</span><span>✎</span><span>T</span><span>◈</span></div><div className="fi-mock-canvas"><i className="fi-sun"/><i className="fi-mountain"/><i className="fi-mountain second"/><i className="fi-water"/></div><div className="fi-mock-inspector"><b>Adjustments</b><small>Exposure</small><span/><small>Contrast</small><span/><small>Saturation</small><span/><b>Layers</b><label>◉ Background</label><label>◉ Colour grade</label></div></div><div className="fi-mock-bottom"><span>● DOCUMENT READY</span><span>PNG · 2400 × 1600</span></div></div><div className="fi-float fi-float-ai"><Sparkles size={14}/> AI-assisted editing <b>Ready</b></div><div className="fi-float fi-float-layer"><Layers size={14}/> Editable layers</div></div></section>
+<section className="fi-proof"><div><b>01</b><span>One unified workspace</span></div><div><b>02</b><span>Precision editing controls</span></div><div><b>03</b><span>AI image transformation</span></div><div><b>04</b><span>Flexible export</span></div></section>
+<section className="fi-features" id="fi-features"><div className="fi-section-heading"><span className="fi-eyebrow">THE WHOLE TOOLKIT, FINALLY TOGETHER</span><h2>Professional control.<br/><em>Without the clutter.</em></h2><p>Everything lives in the same document, so you can combine tools instead of bouncing between mini-apps.</p></div><div className="fi-feature-grid"><article className="fi-feature-card fi-feature-wide"><span className="fi-feature-icon"><Layers size={20}/></span><small>01 / COMPOSE</small><h3>A real layer workflow</h3><p>Keep text, shapes, brush strokes and retouching on separate editable layers. Manage visibility, opacity and properties from one place.</p><div className="fi-layer-pills"><span>◉ Background image</span><span>◉ Typography</span><span>◉ Shape accent</span></div></article><article className="fi-feature-card"><span className="fi-feature-icon"><SlidersHorizontal size={20}/></span><small>02 / GRADE</small><h3>Fine-tune every tone</h3><p>Adjust brightness, contrast, saturation, warmth, blur, grayscale and sepia in a live panel.</p><div className="fi-sliders"><i/><i/><i/><i/></div></article><article className="fi-feature-card"><span className="fi-feature-icon"><Crop size={20}/></span><small>03 / RETOUCH</small><h3>Tools that work together</h3><p>Crop, paint, erase, add text and shapes, blur sensitive areas, pixelate details, then export.</p><div className="fi-tool-pills"><span>Crop</span><span>Brush</span><span>Text</span><span>Blur</span><span>Shapes</span></div></article><article className="fi-feature-card fi-feature-ai" id="fi-ai"><span className="fi-feature-icon"><WandSparkles size={20}/></span><small>04 / AI STUDIO</small><h3>Describe the edit.<br/>Let AI do the heavy lift.</h3><p>Prompt-based image editing in the same workspace. An OpenAI API key must be configured in Vercel; missing configuration is reported clearly.</p><button className="fi-cta fi-cta-small" onClick={()=>{setShowEditor(true);setPanel('ai')}}>Explore AI Studio <ArrowRight size={15}/></button></article></div></section>
+<section className="fi-tool-band" id="fi-tools"><div><span className="fi-eyebrow">BUILT FOR REAL WORK</span><h2>From quick fixes to<br/><em>considered edits.</em></h2></div><div className="fi-tool-list"><span>✓ Crop and composition</span><span>✓ Colour and light adjustments</span><span>✓ Brush, eraser and retouching</span><span>✓ Typography and shapes</span><span>✓ Blur and pixelation regions</span><span>✓ PNG, JPEG and WebP export</span></div></section>
+<footer className="fi-home-footer"><span><b>FreeImage</b> · Useful software. Without the nonsense.</span><span>FREE FOREVER · NO ADS · NO PAYWALLS</span><span>© 2026 FreeToolz</span></footer></main>}
+    {showEditor && <div className="pro-workspace">
       <aside className="pro-tools" aria-label="Editing tools">
         {TOOLSET.map((item, index) => <React.Fragment key={item.id}>
           {(index === 2 || index === 4 || index === 6) && <span className="pro-tool-sep" />}
@@ -329,7 +359,7 @@ export default function App() {
         <div className="pro-tabs">
           <button className={'pro-tab' + (panel === 'properties' ? ' active' : '')} onClick={() => setPanel('properties')}><Settings2 size={13} /> Properties</button>
           <button className={'pro-tab' + (panel === 'layers' ? ' active' : '')} onClick={() => setPanel('layers')}><Layers size={13} /> Layers</button>
-          <button className={'pro-tab' + (panel === 'adjust' ? ' active' : '')} onClick={() => setPanel('adjust')}><SlidersHorizontal size={13} /> Adjust</button>
+          <button className={'pro-tab' + (panel === 'adjust' ? ' active' : '')} onClick={() => setPanel('adjust')}><SlidersHorizontal size={13} /> Adjust</button><button className={'pro-tab' + (panel === 'ai' ? ' active' : '')} onClick={() => setPanel('ai')}><Sparkles size={13}/> AI</button>
         </div>
         <div className="pro-inspector-content">
           {!image && <div className="pro-panel-note">Open an image to enable document properties, layers, colour adjustments, and export.</div>}
@@ -351,6 +381,7 @@ export default function App() {
             <div className="pro-chip-row"><button className="pro-chip" onClick={() => addShapeLayer('rect')} disabled={!image}><Square size={12} /> Rectangle</button><button className="pro-chip" onClick={() => addShapeLayer('circle')} disabled={!image}><Circle size={12} /> Ellipse</button><button className="pro-chip" onClick={() => addShapeLayer('line')} disabled={!image}>Line</button></div>
           </>}
 
+          {panel === 'ai' && <><div className="pro-section-title"><span>AI image studio</span><Sparkles size={14}/></div><div className="pro-panel-note">Describe the change in plain language. Only when you request an AI edit, a resized copy of your image is sent to the configured AI provider. Your original file stays on your device.</div><label className="pro-field">Describe your edit<textarea rows={5} value={aiPrompt} onChange={event => setAiPrompt(event.target.value)} placeholder="Replace the background with a soft studio gradient while keeping the subject unchanged." disabled={!image || aiWorking}/></label><div className="pro-chip-row">{["Remove background","Studio lighting","Cinematic colour","Clean up image"].map(prompt => <button className="pro-chip" key={prompt} onClick={() => setAiPrompt(prompt)} disabled={!image || aiWorking}>{prompt}</button>)}</div><button className="pro-btn pro-primary" style={{width:"100%",marginTop:14}} onClick={runAIEdit} disabled={!image || aiWorking}>{aiWorking ? "AI is working…" : <><WandSparkles size={14}/> Generate edited image</>}</button><p className="pro-muted" style={{marginTop:12}}>Requires <code>OPENAI_API_KEY</code> in Vercel Environment Variables. API usage may incur charges.</p></>}
           {panel === 'adjust' && <>
             <div className="pro-section-title">Colour & light <Sparkles size={14} /></div>
             <div className="pro-panel-note">Adjustments are rendered live and applied to the exported image. Your source file is never overwritten.</div>
@@ -389,10 +420,10 @@ export default function App() {
           <label className="pro-field">Format<select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}><option value="image/png">PNG · Lossless</option><option value="image/jpeg">JPEG · Smaller file</option><option value="image/webp">WebP · Modern</option></select></label>
           {exportFormat !== 'image/png' && <label className="pro-field"><span className="pro-field-row"><span>Quality</span><span className="pro-value">{quality}%</span></span><input type="range" min="30" max="100" value={quality} onChange={(event) => setQuality(Number(event.target.value))} /></label>}
           <button className="pro-btn pro-primary" style={{ width: '100%' }} onClick={exportImage} disabled={!image || busy}><Download size={14} /> Export image</button>
-          <p className="pro-muted" style={{ marginTop: 12 }}>Edits run in your browser. Files are not uploaded to a processing server.</p>
+          <p className="pro-muted" style={{ marginTop: 12 }}>Standard edits run in your browser. AI edits send a resized copy to the configured provider only when requested.</p>
         </div>
       </aside>
-    </div>
+    </div>}
     <footer className="pro-footer"><span><strong>FreeImage</strong> · Useful software. Without the nonsense.</span><span>FREE FOREVER · NO ADS · NO PAYWALLS</span><span>© 2026 FreeToolz</span></footer>
     {notice && <div className="pro-notice"><Check size={15} /> <span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss"><X size={14} /></button></div>}
   </div>;
