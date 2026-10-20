@@ -32,6 +32,9 @@ export default function App() {
   const [opacity, setOpacity] = useState(100);
   const [zoom, setZoom] = useState(100);
   const [crop, setCrop] = useState({ x: 0, y: 0, w: 100, h: 100 });
+  const [rotation, setRotation] = useState(0);
+  const [flipX, setFlipX] = useState(false);
+  const [flipY, setFlipY] = useState(false);
   const [notice, setNotice] = useState('');
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -49,7 +52,7 @@ export default function App() {
   const dims = image ? image.naturalWidth + ' × ' + image.naturalHeight : 'No document';
   const visibleLayers = useMemo(() => layers.filter((layer) => layer.visible !== false), [layers]);
 
-  const snapshot = useCallback(() => ({ adjust: { ...adjust }, layers: layers.map((layer) => ({ ...layer, points: layer.points ? layer.points.map((p) => ({ ...p })) : undefined })), crop: { ...crop } }), [adjust, layers, crop]);
+  const snapshot = useCallback(() => ({ adjust: { ...adjust }, layers: layers.map((layer) => ({ ...layer, points: layer.points ? layer.points.map((p) => ({ ...p })) : undefined })), crop: { ...crop }, rotation, flipX, flipY }), [adjust, layers, crop, rotation, flipX, flipY]);
   const commitHistory = useCallback(() => {
     setHistory((items) => [...items.slice(-39), snapshot()]);
     setFuture([]);
@@ -69,6 +72,7 @@ export default function App() {
       setSelected(null);
       setAdjust(INITIAL_ADJUST);
       setCrop({ x: 0, y: 0, w: 100, h: 100 });
+      setRotation(0); setFlipX(false); setFlipY(false);
       setHistory([]);
       setFuture([]);
       setNotice('Image opened locally. Your original file remains unchanged.');
@@ -123,6 +127,8 @@ export default function App() {
 
   const renderDocument = useCallback((target, exportMode) => {
     if (!image || !target) return;
+    const outputTarget = target;
+    target = document.createElement('canvas');
     const sourceW = image.naturalWidth, sourceH = image.naturalHeight;
     const sx = Math.round(sourceW * crop.x / 100), sy = Math.round(sourceH * crop.y / 100);
     const sw = Math.max(1, Math.min(sourceW - sx, Math.round(sourceW * crop.w / 100)));
@@ -151,7 +157,17 @@ export default function App() {
     if (!exportMode && tool === 'crop') {
       ctx.save(); ctx.strokeStyle = '#55e6a5'; ctx.lineWidth = Math.max(2, sw / 600); ctx.setLineDash([8, 5]); ctx.strokeRect(sw * .03, sh * .03, sw * .94, sh * .94); ctx.restore();
     }
-  }, [image, crop, adjust, visibleLayers, drawLayer, tool]);
+    const turn = ((rotation % 360) + 360) % 360;
+    const swapsSides = turn === 90 || turn === 270;
+    const outW = swapsSides ? sh : sw, outH = swapsSides ? sw : sh;
+    outputTarget.width = outW; outputTarget.height = outH;
+    const outCtx = outputTarget.getContext('2d');
+    outCtx.clearRect(0, 0, outW, outH);
+    outCtx.translate(outW / 2, outH / 2);
+    outCtx.rotate(turn * Math.PI / 180);
+    outCtx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+    outCtx.drawImage(target, -sw / 2, -sh / 2);
+  }, [image, crop, adjust, visibleLayers, drawLayer, tool, rotation, flipX, flipY]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -205,7 +221,7 @@ export default function App() {
   }
 
   function restoreSnapshot(snapshot) {
-    setAdjust(snapshot.adjust); setLayers(snapshot.layers); setCrop(snapshot.crop); setSelected(null);
+    setAdjust(snapshot.adjust); setLayers(snapshot.layers); setCrop(snapshot.crop); setRotation(snapshot.rotation || 0); setFlipX(!!snapshot.flipX); setFlipY(!!snapshot.flipY); setSelected(null);
   }
   function undo() {
     if (!history.length) return;
@@ -270,7 +286,7 @@ export default function App() {
       if (!response.ok) throw new Error(data.error || 'AI editing could not complete.');
       if (!data.image) throw new Error('The AI service returned no edited image.');
       const result = new Image();
-      result.onload = () => { setImage(result); setLayers([{ id: uid(), name: 'AI edited image', type: 'image', visible: true, locked: true, opacity: 100 }]); setSelected(null); setCrop({x:0,y:0,w:100,h:100}); setHistory([]); setFuture([]); setNotice('AI edit ready. Your original local file has not been overwritten.'); setAiWorking(false); };
+      result.onload = () => { setImage(result); setLayers([{ id: uid(), name: 'AI edited image', type: 'image', visible: true, locked: true, opacity: 100 }]); setSelected(null); setCrop({x:0,y:0,w:100,h:100}); setRotation(0); setFlipX(false); setFlipY(false); setHistory([]); setFuture([]); setNotice('AI edit ready. Your original local file has not been overwritten.'); setAiWorking(false); };
       result.onerror = () => { setNotice('The AI-generated image could not be opened.'); setAiWorking(false); };
       result.src = data.image;
     } catch (error) { setNotice(error.message || 'AI editing failed. Check the AI configuration.'); setAiWorking(false); }
@@ -295,7 +311,7 @@ export default function App() {
   }
 
   function resetDocument() {
-    setImage(null); setFile(null); setLayers([]); setSelected(null); setAdjust(INITIAL_ADJUST); setCrop({ x: 0, y: 0, w: 100, h: 100 }); setHistory([]); setFuture([]); setNotice('');
+    setImage(null); setFile(null); setLayers([]); setSelected(null); setAdjust(INITIAL_ADJUST); setCrop({ x: 0, y: 0, w: 100, h: 100 }); setRotation(0); setFlipX(false); setFlipY(false); setHistory([]); setFuture([]); setNotice('');
     if (inputRef.current) inputRef.current.value = '';
   }
 
@@ -401,6 +417,13 @@ export default function App() {
           {panel === 'adjust' && <>
             <div className="pro-section-title">Colour & light <Sparkles size={14} /></div>
             <div className="pro-panel-note">Adjustments are rendered live and applied to the exported image. Your source file is never overwritten.</div>
+            <div className="pro-section-title">Transform</div>
+            <div className="pro-chip-row" style={{ marginBottom: 18 }}>
+              <button className="pro-chip" onClick={() => { commitHistory(); setRotation((value) => (value + 270) % 360); }} disabled={!image}><RotateCcw size={12} /> Rotate left</button>
+              <button className="pro-chip" onClick={() => { commitHistory(); setRotation((value) => (value + 90) % 360); }} disabled={!image}><RotateCcw size={12} /> Rotate right</button>
+              <button className={'pro-chip' + (flipX ? ' active' : '')} onClick={() => { commitHistory(); setFlipX((value) => !value); }} disabled={!image}><FlipHorizontal size={12} /> Flip H</button>
+              <button className={'pro-chip' + (flipY ? ' active' : '')} onClick={() => { commitHistory(); setFlipY((value) => !value); }} disabled={!image}>Flip V</button>
+            </div>
             <div className="pro-section-title">One-click looks</div>
             <div className="pro-chip-row" style={{ marginBottom: 18 }}>
               {[['vivid','Vivid'],['portrait','Portrait'],['vintage','Vintage'],['mono','B&W'],['negative','Negative'],['cool','Cool tone'],['original','Reset']].map(([id,label]) => <button className="pro-chip" key={id} onClick={() => applyPreset(id)} disabled={!image}>{label}</button>)}
