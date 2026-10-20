@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Aperture, ArrowDownToLine, ArrowLeft, ArrowRight, Brush, Check, ChevronDown, Circle, Crop, Download, Eye, EyeOff, FileImage, FlipHorizontal, Hand, Image as ImageIcon, Layers, Minus, MousePointer2, Paintbrush, Plus, Redo2, RotateCcw, Save, Settings2, Shapes, SlidersHorizontal, Sparkles, Square, Type, Undo2, Upload, WandSparkles, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Aperture, ArrowDownToLine, ArrowLeft, ArrowRight, Brush, Check, ChevronDown, Circle, Crop, Download, Eye, EyeOff, FileImage, FlipHorizontal, Hand, Image as ImageIcon, Layers, LockKeyhole, Minus, MousePointer2, Paintbrush, Plus, Redo2, RotateCcw, Save, Settings2, Shapes, SlidersHorizontal, Sparkles, Square, Type, Undo2, Upload, WandSparkles, X, ZoomIn, ZoomOut } from 'lucide-react';
 
 const TOOLSET = [
   { id: 'move', label: 'Move', Icon: MousePointer2, group: 'Essentials' },
