@@ -1,253 +1,399 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Blend, Check, ChevronDown, Circle, Crop, Download, Eraser, FileImage, FileText, Frame, Gauge, Github, Image as ImageIcon, Linkedin, LockKeyhole, Mail, Maximize2, Menu, MousePointer2, MoveUpRight, Paintbrush, Plus, RotateCcw, ScanFace, ShieldCheck, Sparkles, Upload, WandSparkles, X, Zap } from 'lucide-react';
-import { jsPDF } from 'jspdf';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Aperture, ArrowDownToLine, ArrowLeft, ArrowRight, Brush, Check, ChevronDown, Circle, Crop, Download, Eye, EyeOff, FileImage, FlipHorizontal, Hand, Image as ImageIcon, Layers, Minus, MousePointer2, Paintbrush, Plus, Redo2, RotateCcw, Save, Settings2, Shapes, SlidersHorizontal, Sparkles, Square, Type, Undo2, Upload, WandSparkles, X, ZoomIn, ZoomOut } from 'lucide-react';
 
-const groups = [
-  { title: 'Everyday edits', tools: [
-    ['resize','Resize image','Change dimensions without leaving your browser',Maximize2],
-    ['crop','Crop image','Trim to the area you actually need',Crop],
-    ['compress','Compress image','Reduce file size for faster sharing',Gauge],
-    ['convert','Convert format','JPG, PNG and WebP in one place',FileImage],
-    ['remove-metadata','Remove EXIF metadata','Re-export a clean copy without embedded metadata',ShieldCheck],
-    ['rounded','Rounded corners','Give images a smooth, modern edge',Frame],
-    ['borders','Add borders','Frame your image with a custom border',Plus],
-    ['image-pdf','Image to PDF','Turn an image into a downloadable PDF',FileText],
-  ]},
-  { title: 'Privacy & pixel tools', tools: [
-    ['blur','Blur central area','Blur a central region before sharing',Blend],
-    ['pixelate','Pixelate central area','Mosaic a central region before sharing',ScanFace],
-    ['highlight','Highlight area','Draw attention to a part of the image',Sparkles],
-    ['screenshot','Screenshot cleanup','Tidy up screenshots with contrast and brightness',WandSparkles],
-  ]},
-  { title: 'Image toolkit', tools: [
-    ['arrow','Arrow marker','Point to something important',MoveUpRight],
-    ['rectangle','Rectangle marker','Outline a region in your screenshot',Frame],
-    ['circle','Circle marker','Circle a detail that matters',Circle],
-    ['text','Add text','Label an image with a short note',FileText],
-    ['number','Number markers','Add numbered steps to a walkthrough',BadgeCheck],
-    ['background','Remove solid background','Make a simple, edge-connected solid background transparent',Eraser],
-    ['sharpen','Sharpen image','Boost perceived detail with a local filter',Zap],
-    ['upscale','Upscale 2×','Enlarge with high-quality browser resampling',Maximize2],
-  ]},
+const TOOLSET = [
+  { id: 'move', label: 'Move', Icon: MousePointer2, group: 'Essentials' },
+  { id: 'crop', label: 'Crop', Icon: Crop, group: 'Essentials' },
+  { id: 'brush', label: 'Brush', Icon: Paintbrush, group: 'Paint' },
+  { id: 'eraser', label: 'Eraser', Icon: Brush, group: 'Paint' },
+  { id: 'text', label: 'Text', Icon: Type, group: 'Create' },
+  { id: 'shape', label: 'Shape', Icon: Shapes, group: 'Create' },
+  { id: 'blur', label: 'Blur area', Icon: Aperture, group: 'Retouch' },
+  { id: 'pixelate', label: 'Pixelate', Icon: Circle, group: 'Retouch' },
 ];
-const allTools = groups.flatMap(g=>g.tools);
-const routeSlug = id => id === 'image-pdf' ? 'image-to-pdf' : id;
-const routeToolId = () => {
-  const slug = window.location.pathname.replace(/^\/+|\/+$/g, '');
-  return allTools.find(t => routeSlug(t[0]) === slug)?.[0] || null;
-};
-const defaults = { width: 1200, height: 800, quality: 82, cropX: 0, cropY: 0, cropW: 100, cropH: 100, radius: 36, border: 12, blur: 18, pixel: 14, brightness: 100, contrast: 110, format: 'image/webp', color: '#42e6a4', text: 'Your text', maxSize: 1600 };
-const fmt = (type) => type === 'image/jpeg' ? 'jpg' : type === 'image/webp' ? 'webp' : 'png';
-const prettyBytes = n => n < 1024 ? n+' B' : n < 1048576 ? (n/1024).toFixed(1)+' KB' : (n/1048576).toFixed(2)+' MB';
+const INITIAL_ADJUST = { brightness: 100, contrast: 100, saturation: 100, warmth: 0, blur: 0, grayscale: 0, sepia: 0 };
+const uid = () => 'layer-' + Math.random().toString(36).slice(2, 10);
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
 export default function App() {
-  const [file,setFile] = useState(null);
-  const [source,setSource] = useState(null);
-  const [active,setActive] = useState(()=>routeToolId() || 'resize');
-  const [isToolPage,setIsToolPage] = useState(()=>Boolean(routeToolId()));
-  const [settings,setSettings] = useState(defaults);
-  const [output,setOutput] = useState(null);
-  const [busy,setBusy] = useState(false);
-  const [notice,setNotice] = useState('');
-  const [installPrompt,setInstallPrompt] = useState(null);
-  const [installHelp,setInstallHelp] = useState(false);
-  const [isInstalled,setIsInstalled] = useState(false);
-  const [mobileMenu,setMobileMenu] = useState(false);
-  const [markups,setMarkups] = useState([]);
+  const [file, setFile] = useState(null);
+  const [image, setImage] = useState(null);
+  const [tool, setTool] = useState('move');
+  const [panel, setPanel] = useState('layers');
+  const [adjust, setAdjust] = useState(INITIAL_ADJUST);
+  const [layers, setLayers] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [textValue, setTextValue] = useState('Your text');
+  const [color, setColor] = useState('#55e6a5');
+  const [brushSize, setBrushSize] = useState(18);
+  const [opacity, setOpacity] = useState(100);
+  const [zoom, setZoom] = useState(100);
+  const [crop, setCrop] = useState({ x: 0, y: 0, w: 100, h: 100 });
+  const [notice, setNotice] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [future, setFuture] = useState([]);
+  const [exportFormat, setExportFormat] = useState('image/png');
+  const [quality, setQuality] = useState(92);
+  const [filename, setFilename] = useState('freeimage-edit');
   const canvasRef = useRef(null);
-  const imageRef = useRef(null);
-  const fileRef = useRef(null);
-  const [dragging,setDragging] = useState(false);
-  const tool = allTools.find(t=>t[0]===active) || allTools[0];
-  const isEdit = ['highlight','arrow','rectangle','circle','text','number'].includes(active);
-  const hasFile = Boolean(source);
+  const stageRef = useRef(null);
+  const inputRef = useRef(null);
+  const gestureRef = useRef(null);
 
-  useEffect(()=>{
-    const before = e => { e.preventDefault(); setInstallPrompt(e); };
-    const installed = () => { setIsInstalled(true); setInstallPrompt(null); };
-    window.addEventListener('beforeinstallprompt',before);
-    window.addEventListener('appinstalled',installed);
-    if (window.matchMedia('(display-mode: standalone)').matches) setIsInstalled(true);
-    return ()=> { window.removeEventListener('beforeinstallprompt',before); window.removeEventListener('appinstalled',installed); };
-  },[]);
-  useEffect(()=>{ document.title = isToolPage ? tool[1]+' — FreeImage' : 'FreeImage — Your images. Your device.'; },[active,tool,isToolPage]);
-  useEffect(()=>{
-    const syncRoute = () => { const id=routeToolId(); setIsToolPage(Boolean(id)); if(id) setActive(id); };
-    window.addEventListener('popstate',syncRoute);
-    return ()=>window.removeEventListener('popstate',syncRoute);
-  },[]);
-  useEffect(()=>{ if(source) drawPreview(source); },[source,markups,settings,active]);
+  const activeLayer = layers.find((layer) => layer.id === selected) || null;
+  const dims = image ? image.naturalWidth + ' × ' + image.naturalHeight : 'No document';
+  const visibleLayers = useMemo(() => layers.filter((layer) => layer.visible !== false), [layers]);
 
-  function drawPreview(img) {
-    const canvas=canvasRef.current; if(!canvas || !img) return;
-    const ctx=canvas.getContext('2d');
-    const scale=Math.min(1,920/img.width,620/img.height);
-    canvas.width=Math.max(1,Math.round(img.width*scale)); canvas.height=Math.max(1,Math.round(img.height*scale));
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    markups.forEach(m=>{
-      const x=m.x*canvas.width,y=m.y*canvas.height,w=m.w*canvas.width,h=m.h*canvas.height;
-      ctx.strokeStyle=m.color||settings.color; ctx.fillStyle=m.color||settings.color; ctx.lineWidth=3;
-      if(m.type==='rectangle') ctx.strokeRect(x,y,w,h);
-      if(m.type==='circle'){ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,Math.abs(w/2),Math.abs(h/2),0,0,Math.PI*2);ctx.stroke();}
-      if(m.type==='arrow'){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+w,y+h);ctx.stroke();ctx.beginPath();ctx.moveTo(x+w,y+h);ctx.lineTo(x+w-10,y+h-2);ctx.lineTo(x+w-2,y+h-10);ctx.closePath();ctx.fill();}
-      if(m.type==='text'||m.type==='number'){ctx.font='bold 22px Inter, sans-serif';ctx.fillText(m.text||'1',x,y);}
-      if(m.type==='highlight'){ctx.globalAlpha=.28;ctx.fillRect(x,y,w,h);ctx.globalAlpha=1;}
+  const snapshot = useCallback(() => ({ adjust: { ...adjust }, layers: layers.map((layer) => ({ ...layer, points: layer.points ? layer.points.map((p) => ({ ...p })) : undefined })), crop: { ...crop } }), [adjust, layers, crop]);
+  const commitHistory = useCallback(() => {
+    setHistory((items) => [...items.slice(-39), snapshot()]);
+    setFuture([]);
+  }, [snapshot]);
+
+  const loadImage = useCallback((nextFile) => {
+    if (!nextFile) return;
+    if (!nextFile.type.startsWith('image/')) { setNotice('Choose an image file such as PNG, JPG, WebP, or GIF.'); return; }
+    if (nextFile.size > 60 * 1024 * 1024) { setNotice('This image is over 60 MB. Choose a smaller file for smooth browser editing.'); return; }
+    const url = URL.createObjectURL(nextFile);
+    const img = new Image();
+    img.onload = () => {
+      setFile(nextFile);
+      setImage(img);
+      setFilename(nextFile.name.replace(/\.[^.]+$/, '') || 'freeimage-edit');
+      setLayers([{ id: uid(), name: 'Background image', type: 'image', visible: true, locked: true, opacity: 100 }]);
+      setSelected(null);
+      setAdjust(INITIAL_ADJUST);
+      setCrop({ x: 0, y: 0, w: 100, h: 100 });
+      setHistory([]);
+      setFuture([]);
+      setNotice('Image opened locally. Your original file remains unchanged.');
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setNotice('This image could not be decoded by the browser. Try PNG, JPG, or WebP.'); URL.revokeObjectURL(url); };
+    img.src = url;
+  }, []);
+
+  const drawLayer = useCallback((ctx, layer, width, height) => {
+    if (!layer || layer.visible === false) return;
+    ctx.save();
+    ctx.globalAlpha = (layer.opacity == null ? 100 : layer.opacity) / 100;
+    ctx.strokeStyle = layer.color || color;
+    ctx.fillStyle = layer.color || color;
+    ctx.lineWidth = Math.max(1, (layer.size || brushSize) * width / 1000);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (layer.type === 'stroke' && layer.points && layer.points.length) {
+      ctx.globalCompositeOperation = layer.tool === 'eraser' ? 'destination-out' : 'source-over';
+      ctx.beginPath();
+      layer.points.forEach((point, index) => {
+        const x = point.x * width, y = point.y * height;
+        if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    } else if (layer.type === 'text') {
+      ctx.font = '600 ' + Math.max(12, (layer.size || 36) * width / 1000) + 'px Inter, Arial, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(layer.text || 'Text', (layer.x || .5) * width, (layer.y || .5) * height);
+    } else if (layer.type === 'shape') {
+      const x = (layer.x || .25) * width, y = (layer.y || .25) * height;
+      const w = (layer.w || .25) * width, h = (layer.h || .2) * height;
+      if (layer.shape === 'circle') {
+        ctx.beginPath(); ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, Math.PI * 2);
+      } else if (layer.shape === 'line') {
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h);
+      } else {
+        ctx.strokeRect(x, y, w, h);
+      }
+      ctx.stroke();
+    } else if (layer.type === 'region' && layer.mode === 'blur') {
+      const x = Math.round((layer.x || 0) * width), y = Math.round((layer.y || 0) * height);
+      const w = Math.max(1, Math.round((layer.w || .2) * width)), h = Math.max(1, Math.round((layer.h || .2) * height));
+      ctx.restore();
+      return;
+    } else if (layer.type === 'region' && layer.mode === 'pixelate') {
+      // Region effects are composited in renderDocument after the base pixels.
+    }
+    ctx.restore();
+  }, [color, brushSize]);
+
+  const renderDocument = useCallback((target, exportMode) => {
+    if (!image || !target) return;
+    const sourceW = image.naturalWidth, sourceH = image.naturalHeight;
+    const sx = Math.round(sourceW * crop.x / 100), sy = Math.round(sourceH * crop.y / 100);
+    const sw = Math.max(1, Math.min(sourceW - sx, Math.round(sourceW * crop.w / 100)));
+    const sh = Math.max(1, Math.min(sourceH - sy, Math.round(sourceH * crop.h / 100)));
+    target.width = sw; target.height = sh;
+    const ctx = target.getContext('2d', { willReadFrequently: true });
+    ctx.clearRect(0, 0, sw, sh);
+    ctx.filter = 'brightness(' + adjust.brightness + '%) contrast(' + adjust.contrast + '%) saturate(' + adjust.saturation + '%) blur(' + adjust.blur + 'px) grayscale(' + adjust.grayscale + '%) sepia(' + adjust.sepia + '%)';
+    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
+    ctx.filter = 'none';
+    if (adjust.warmth !== 0) {
+      ctx.save(); ctx.globalAlpha = Math.abs(adjust.warmth) / 180;
+      ctx.fillStyle = adjust.warmth > 0 ? '#ff9d52' : '#5e9dff'; ctx.globalCompositeOperation = 'soft-light'; ctx.fillRect(0, 0, sw, sh); ctx.restore();
+    }
+    visibleLayers.filter((layer) => layer.type !== 'image').forEach((layer) => {
+      if (layer.type === 'region' && (layer.mode === 'blur' || layer.mode === 'pixelate')) {
+        const x = Math.round((layer.x || 0) * sw), y = Math.round((layer.y || 0) * sh);
+        const w = Math.max(1, Math.round((layer.w || .2) * sw)), h = Math.max(1, Math.round((layer.h || .2) * sh));
+        const patch = document.createElement('canvas'); patch.width = w; patch.height = h;
+        const pc = patch.getContext('2d');
+        if (layer.mode === 'blur') { pc.filter = 'blur(' + (layer.size || 12) + 'px)'; pc.drawImage(target, x, y, w, h, 0, 0, w, h); pc.filter = 'none'; }
+        else { const scale = Math.max(2, layer.size || 12); pc.imageSmoothingEnabled = false; pc.drawImage(target, x, y, w, h, 0, 0, Math.max(1, Math.round(w / scale)), Math.max(1, Math.round(h / scale))); pc.drawImage(patch, 0, 0); }
+        ctx.save(); ctx.globalAlpha = (layer.opacity == null ? 100 : layer.opacity) / 100; ctx.drawImage(patch, x, y); ctx.restore();
+      } else drawLayer(ctx, layer, sw, sh);
     });
-  }
-  function loadFile(f) {
-    if(!f) return;
-    if(!f.type.startsWith('image/')) { setNotice('Choose an image file such as JPG, PNG, WebP or GIF.'); return; }
-    if(f.size>40*1024*1024){setNotice('For smooth local editing, choose an image smaller than 40 MB.');return;}
-    const url=URL.createObjectURL(f), img=new Image();
-    img.onload=()=>{setFile(f);setSource(img);setOutput(null);setMarkups([]);setNotice('');URL.revokeObjectURL(url);};
-    img.onerror=()=>{setNotice('This image could not be opened by your browser. Try a JPG, PNG or WebP file.');URL.revokeObjectURL(url);};
-    img.src=url;
-  }
-  function update(key,value){setSettings(s=>({...s,[key]:value}));}
-  function addMarkup() {
-    const type=active;
-    setMarkups(m=>[...m,{type,x:.18+(m.length%4)*.08,y:.2+(m.length%3)*.1,w:.35,h:.24,color:settings.color,text:type==='number'?String(m.length+1):settings.text}]);
-    setNotice('Marker added to the preview. Download to bake it into your image.');
-  }
-  function getCanvas() {
-    if(!source) throw new Error('Upload an image first.');
-    const c=document.createElement('canvas'),ctx=c.getContext('2d');
-    let sx=0,sy=0,sw=source.naturalWidth,sh=source.naturalHeight;
-    if(active==='crop'){sx=Math.round(sw*settings.cropX/100);sy=Math.round(sh*settings.cropY/100);sw=Math.max(1,Math.round(sw*settings.cropW/100));sh=Math.max(1,Math.round(sh*settings.cropH/100));sw=Math.min(sw,source.naturalWidth-sx);sh=Math.min(sh,source.naturalHeight-sy);}
-    let w=sw,h=sh;
-    if(active==='resize'){w=Math.max(1,Math.round(+settings.width||sw));h=Math.max(1,Math.round(+settings.height||sh));}
-    if(active==='upscale'){w=Math.min(12000,sw*2);h=Math.min(12000,sh*2);}
-    c.width=w;c.height=h;
-    if(active==='rounded'||active==='background'){
-      ctx.clearRect(0,0,w,h);ctx.save();const r=active==='background'?0:Math.min(+settings.radius||0,w/2,h/2);
-      ctx.beginPath();ctx.moveTo(r,0);ctx.arcTo(w,0,w,h,r);ctx.arcTo(w,h,0,h,r);ctx.arcTo(0,h,0,0,r);ctx.arcTo(0,0,w,0,r);ctx.closePath();ctx.clip();
+    if (!exportMode && tool === 'crop') {
+      ctx.save(); ctx.strokeStyle = '#55e6a5'; ctx.lineWidth = Math.max(2, sw / 600); ctx.setLineDash([8, 5]); ctx.strokeRect(sw * .03, sh * .03, sw * .94, sh * .94); ctx.restore();
     }
-    if(active==='screenshot') ctx.filter='brightness('+settings.brightness+'%) contrast('+settings.contrast+'%)';
-    if(active==='sharpen') ctx.filter='contrast(118%) saturate(108%)';
-    ctx.drawImage(source,sx,sy,sw,sh,0,0,w,h);
-    ctx.filter='none';
-    if(active==='background'){
-      const imageData=ctx.getImageData(0,0,w,h), data=imageData.data;
-      const seed=[data[0],data[1],data[2]], tolerance=58;
-      const visited=new Uint8Array(w*h), stack=[];
-      const enqueue=p=>{if(p>=0&&p<w*h&&!visited[p]){visited[p]=1;stack.push(p);}};
-      for(let x=0;x<w;x++){enqueue(x);enqueue((h-1)*w+x);}
-      for(let y=1;y<h-1;y++){enqueue(y*w);enqueue(y*w+w-1);}
-      while(stack.length){
-        const p=stack.pop();
-        const i=p*4, dr=data[i]-seed[0], dg=data[i+1]-seed[1], db=data[i+2]-seed[2];
-        if(Math.sqrt(dr*dr+dg*dg+db*db)>tolerance)continue;
-        data[i+3]=0;
-        const x=p%w,y=(p/w)|0;
-        if(x>0)enqueue(p-1);if(x<w-1)enqueue(p+1);if(y>0)enqueue(p-w);if(y<h-1)enqueue(p+w);
-      }
-      ctx.putImageData(imageData,0,0);
-    }
-    if(active==='rounded'||active==='background') ctx.restore();
-    if(active==='borders'){const b=Math.max(0,+settings.border||0);const out=document.createElement('canvas');out.width=w+b*2;out.height=h+b*2;const o=out.getContext('2d');o.fillStyle=settings.color;o.fillRect(0,0,out.width,out.height);o.drawImage(c,b,b);return out;}
-    if(active==='pixelate'||active==='blur'){
-      const area={x:Math.round(w*.2),y:Math.round(h*.2),w:Math.round(w*.6),h:Math.round(h*.35)};
-      if(active==='pixelate'){const tiny=document.createElement('canvas');tiny.width=Math.max(1,Math.round(area.w/settings.pixel));tiny.height=Math.max(1,Math.round(area.h/settings.pixel));tiny.getContext('2d').drawImage(c,area.x,area.y,area.w,area.h,0,0,tiny.width,tiny.height);ctx.imageSmoothingEnabled=false;ctx.drawImage(tiny,0,0,tiny.width,tiny.height,area.x,area.y,area.w,area.h);ctx.imageSmoothingEnabled=true;}
-      else {const patch=document.createElement('canvas');patch.width=area.w;patch.height=area.h;patch.getContext('2d').filter='blur('+settings.blur+'px)';patch.getContext('2d').drawImage(c,area.x,area.y,area.w,area.h,0,0,area.w,area.h);ctx.drawImage(patch,area.x,area.y);}
-    }
-    if(markups.length){markups.forEach(m=>{const x=m.x*w,y=m.y*h,mw=m.w*w,mh=m.h*h;ctx.strokeStyle=m.color;ctx.fillStyle=m.color;ctx.lineWidth=Math.max(3,w/300);if(m.type==='rectangle')ctx.strokeRect(x,y,mw,mh);if(m.type==='circle'){ctx.beginPath();ctx.ellipse(x+mw/2,y+mh/2,mw/2,mh/2,0,0,Math.PI*2);ctx.stroke();}if(m.type==='highlight'){ctx.globalAlpha=.25;ctx.fillRect(x,y,mw,mh);ctx.globalAlpha=1;}if(m.type==='arrow'){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+mw,y+mh);ctx.stroke();ctx.beginPath();ctx.moveTo(x+mw,y+mh);ctx.lineTo(x+mw-12,y+mh-3);ctx.lineTo(x+mw-3,y+mh-12);ctx.closePath();ctx.fill();}if(m.type==='text'||m.type==='number'){ctx.font='bold '+Math.max(20,w/35)+'px sans-serif';ctx.fillText(m.text,x,y);}});}
-    return c;
+  }, [image, crop, adjust, visibleLayers, drawLayer, tool]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !image) return;
+    renderDocument(canvas, false);
+  }, [image, renderDocument]);
+
+  function changeAdjust(key, value) {
+    commitHistory();
+    setAdjust((old) => ({ ...old, [key]: Number(value) }));
   }
-  async function process() {
-    if(!source){setNotice('Upload an image first to start editing.');return;}
-    if(isEdit&&!markups.length){addMarkup();return;}
-    setBusy(true);setNotice('');
+
+  function addTextLayer() {
+    if (!image) { setNotice('Open an image before adding layers.'); return; }
+    commitHistory();
+    const layer = { id: uid(), name: textValue.trim() || 'Text layer', type: 'text', text: textValue.trim() || 'Text', x: .12, y: .2, size: 38, color, opacity, visible: true };
+    setLayers((items) => [...items, layer]); setSelected(layer.id); setNotice('Text layer added. Adjust its text and style in Properties.');
+  }
+
+  function addShapeLayer(shape) {
+    if (!image) { setNotice('Open an image before adding layers.'); return; }
+    commitHistory();
+    const layer = { id: uid(), name: shape === 'circle' ? 'Ellipse shape' : shape === 'line' ? 'Line shape' : 'Rectangle shape', type: 'shape', shape, x: .28, y: .28, w: .36, h: .28, color, size: 3, opacity, visible: true };
+    setLayers((items) => [...items, layer]); setSelected(layer.id); setNotice('Shape layer added to the document.');
+  }
+
+  function removeSelected() {
+    if (!selected) return;
+    commitHistory(); setLayers((items) => items.filter((layer) => layer.id !== selected)); setSelected(null);
+  }
+
+  function patchSelected(patch) {
+    commitHistory();
+    setLayers((items) => items.map((layer) => layer.id === selected ? { ...layer, ...patch } : layer));
+  }
+
+  function restoreSnapshot(snapshot) {
+    setAdjust(snapshot.adjust); setLayers(snapshot.layers); setCrop(snapshot.crop); setSelected(null);
+  }
+  function undo() {
+    if (!history.length) return;
+    const previous = history[history.length - 1];
+    setFuture((items) => [...items, snapshot()]);
+    restoreSnapshot(previous);
+    setHistory((items) => items.slice(0, -1));
+  }
+  function redo() {
+    if (!future.length) return;
+    const next = future[future.length - 1];
+    setHistory((items) => [...items, snapshot()]);
+    restoreSnapshot(next);
+    setFuture((items) => items.slice(0, -1));
+  }
+
+  function pointFromEvent(event) {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: clamp((event.clientX - rect.left) / rect.width, 0, 1), y: clamp((event.clientY - rect.top) / rect.height, 0, 1) };
+  }
+  function onCanvasDown(event) {
+    if (!image || !['brush', 'eraser', 'shape', 'blur', 'pixelate'].includes(tool)) return;
+    event.preventDefault();
+    const p = pointFromEvent(event);
+    gestureRef.current = { tool, start: p, points: [p] };
+    canvasRef.current.setPointerCapture(event.pointerId);
+  }
+  function onCanvasMove(event) {
+    if (!gestureRef.current) return;
+    const p = pointFromEvent(event);
+    if (gestureRef.current.tool === 'brush' || gestureRef.current.tool === 'eraser') gestureRef.current.points.push(p);
+  }
+  function onCanvasUp() {
+    const gesture = gestureRef.current;
+    if (!gesture) return;
+    gestureRef.current = null;
+    const end = gesture.points[gesture.points.length - 1];
+    const x = Math.min(gesture.start.x, end.x), y = Math.min(gesture.start.y, end.y);
+    const w = Math.max(.015, Math.abs(end.x - gesture.start.x)), h = Math.max(.015, Math.abs(end.y - gesture.start.y));
+    commitHistory();
+    let layer;
+    if (gesture.tool === 'brush' || gesture.tool === 'eraser') {
+      layer = { id: uid(), name: gesture.tool === 'eraser' ? 'Eraser stroke' : 'Brush stroke', type: 'stroke', tool: gesture.tool, points: gesture.points, size: brushSize, color, opacity, visible: true };
+    } else if (gesture.tool === 'shape') {
+      layer = { id: uid(), name: 'Rectangle shape', type: 'shape', shape: 'rect', x, y, w, h, size: Math.max(2, brushSize / 4), color, opacity, visible: true };
+    } else {
+      layer = { id: uid(), name: gesture.tool === 'blur' ? 'Blur region' : 'Pixelated region', type: 'region', mode: gesture.tool, x, y, w, h, size: brushSize, color, opacity, visible: true };
+    }
+    setLayers((items) => [...items, layer]); setSelected(layer.id); setNotice(layer.name + ' added as an editable layer.');
+  }
+
+  async function exportImage() {
+    if (!image) { setNotice('Open an image before exporting.'); return; }
+    setBusy(true); setNotice('');
     try {
-      const c=getCanvas();
-      if(active==='image-pdf'){
-        const pdf=new jsPDF({orientation:c.width>c.height?'landscape':'portrait',unit:'px',format:[c.width,c.height]});
-        pdf.addImage(c.toDataURL('image/jpeg',.94),'JPEG',0,0,c.width,c.height);
-        const blob=pdf.output('blob');setOutput({url:URL.createObjectURL(blob),name:(file?.name||'image').replace(/\.[^.]+$/,'')+'.pdf',size:blob.size});setNotice('PDF ready to download.');return;
-      }
-      const type=active==='convert'||active==='compress' ? settings.format : (active==='remove-metadata' ? 'image/jpeg' : 'image/png');
-      const quality=(+settings.quality||82)/100;
-      c.toBlob(blob=>{
-        if(!blob){setNotice('This format could not be exported by your browser. Try PNG or WebP.');setBusy(false);return;}
-        const extension=fmt(type);
-        const base=(file?.name||'image').replace(/\.[^.]+$/,'');
-        const url=URL.createObjectURL(blob);setOutput({url,name:base+'-freeimage.'+extension,size:blob.size});setNotice(active==='remove-metadata'?'Clean copy created. Canvas export strips embedded EXIF metadata.':'Your edited image is ready.');setBusy(false);
-      },type,quality);
-    } catch(e){setNotice(e?.message||'Could not process this image. Try another file or setting.');setBusy(false);}
+      const canvas = document.createElement('canvas');
+      renderDocument(canvas, true);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, exportFormat, quality / 100));
+      if (!blob) throw new Error('This format is not supported by this browser. Try PNG or JPEG.');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ext = exportFormat === 'image/jpeg' ? 'jpg' : exportFormat === 'image/webp' ? 'webp' : 'png';
+      a.href = url; a.download = (filename.trim() || 'freeimage-edit') + '.' + ext; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      setNotice('Export complete — ' + (blob.size / 1024).toFixed(1) + ' KB.'); 
+    } catch (error) { setNotice(error.message || 'Export failed.'); }
+    finally { setBusy(false); }
   }
-  function downloadOutput(){if(!output)return;const a=document.createElement('a');a.href=output.url;a.download=output.name;a.click();}
-  function reset(){setFile(null);setSource(null);setOutput(null);setMarkups([]);setNotice('');if(fileRef.current)fileRef.current.value='';}
-  function navigateTool(id){window.history.pushState({},'', '/'+routeSlug(id));setActive(id);setIsToolPage(true);setNotice('');setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'});}
-  function navigateHome(){window.history.pushState({},'', '/');setIsToolPage(false);setActive('resize');reset();setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'});}
-  const dimensions=source?source.naturalWidth+' × '+source.naturalHeight:'No image loaded';
-  const selectedToolTitle=tool[1];
-  return <div className="app-shell">
-    <div className="ambient ambient-one"/><div className="ambient ambient-two"/>
-    <header className="navbar">
-      <a className="brand" href="/" onClick={e=>{e.preventDefault();navigateHome();}}><span className="brand-mark"><ImageIcon size={21}/></span><span>Free<span className="brand-accent">Image</span><small>THE PRIVATE IMAGE TOOLKIT</small></span></a>
-      <nav className={mobileMenu?'nav-links nav-open':'nav-links'}><a href={isToolPage?'/#tools':'#tools'} onClick={()=>setMobileMenu(false)}>Tools</a><a href={isToolPage?'/#privacy':'#privacy'} onClick={()=>setMobileMenu(false)}>Privacy</a><a href={isToolPage?'/#toolkit':'#toolkit'} onClick={()=>setMobileMenu(false)}>Image toolkit</a></nav>
-      <div className="nav-actions">
-        <button className="install-button" onClick={()=>{if(installPrompt){installPrompt.prompt();installPrompt.userChoice.then(()=>setInstallPrompt(null));}else setInstallHelp(v=>!v);}}>{isInstalled?<Check size={16}/>:<ArrowDownToLine size={16}/>} {isInstalled?'Installed':'Install app'}</button>
-        {installHelp&&<div className="install-popover"><b>Install FreeImage</b><p>In Chrome or Edge, use the install icon in the address bar or browser menu. On iPhone/iPad, open in Safari → Share → Add to Home Screen.</p><button onClick={()=>setInstallHelp(false)}>Got it</button></div>}
-        <button className="mobile-menu" aria-label="Toggle navigation" onClick={()=>setMobileMenu(v=>!v)}><Menu/></button>
+
+  function resetDocument() {
+    setImage(null); setFile(null); setLayers([]); setSelected(null); setAdjust(INITIAL_ADJUST); setCrop({ x: 0, y: 0, w: 100, h: 100 }); setHistory([]); setFuture([]); setNotice('');
+    if (inputRef.current) inputRef.current.value = '';
+  }
+
+  const styles = [
+    '.pro-shell{min-height:100vh;background:#080e0c;color:#e7f4ed;font-family:Inter,ui-sans-serif,system-ui,sans-serif;--emerald:#55e6a5;--muted:#8ba69a;--line:#263a31;display:flex;flex-direction:column}',
+    '.pro-shell *{box-sizing:border-box}.pro-shell button,.pro-shell input,.pro-shell select{font:inherit}.pro-shell button{cursor:pointer}.pro-top{height:62px;display:flex;align-items:center;gap:18px;padding:0 22px;border-bottom:1px solid #23372e;background:#0b1410;position:sticky;top:0;z-index:20}.pro-brand{display:flex;align-items:center;gap:10px;min-width:170px;color:#eefaf3;text-decoration:none;font-weight:800;letter-spacing:-.5px}.pro-brand small{display:block;font-size:8px;color:#8eaa9a;letter-spacing:1.6px;margin-top:3px;font-weight:600}.pro-mark{width:35px;height:35px;border-radius:10px;display:grid;place-items:center;background:#143e2b;border:1px solid #2d7652;color:var(--emerald)}.pro-file-actions,.pro-top-right{display:flex;align-items:center;gap:7px}.pro-top-spacer{flex:1}.pro-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #2b4236;border-radius:8px;background:#101d16;color:#bfd3c6;padding:8px 11px;font-size:11px!important;white-space:nowrap}.pro-btn:hover{border-color:#4f9b73;color:#f2fff7}.pro-btn:disabled{opacity:.35;cursor:not-allowed}.pro-primary{background:#1d8558;border-color:#3db47a;color:#f3fff7;font-weight:700}.pro-primary:hover{background:#249c68}.pro-icon-btn{width:34px;height:34px;padding:0}.pro-divider{width:1px;height:25px;background:#293b32;margin:0 3px}',
+    '.pro-workspace{display:grid;grid-template-columns:64px minmax(0,1fr) 300px;min-height:calc(100vh - 62px);flex:1}.pro-tools{background:#0b1410;border-right:1px solid #23372e;padding:12px 8px;display:flex;flex-direction:column;align-items:center;gap:7px}.pro-tool{width:46px;height:46px;border:1px solid transparent;border-radius:10px;background:transparent;color:#88a596;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:8px!important}.pro-tool:hover{background:#14241b;color:#d7eee1}.pro-tool.active{background:#153d2a;border-color:#2c8056;color:#72edb1;box-shadow:inset 0 0 0 1px #55e6a512}.pro-tool-sep{height:1px;background:#23372e;width:31px;margin:4px 0}',
+    '.pro-center{min-width:0;display:flex;flex-direction:column;background:#080f0c}.pro-docbar{height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid #1b2b23;background:#0a120e;color:#789889;font-size:10px;gap:12px}.pro-docbar strong{color:#d0e5d8;font-weight:600}.pro-stage{flex:1;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:auto;padding:30px;background-color:#090f0c;background-image:linear-gradient(45deg,#ffffff04 25%,transparent 25%),linear-gradient(-45deg,#ffffff04 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ffffff04 75%),linear-gradient(-45deg,transparent 75%,#ffffff04 75%);background-size:24px 24px;background-position:0 0,0 12px,12px -12px,-12px 0}.pro-canvas-wrap{position:relative;max-width:100%;box-shadow:0 18px 60px #0009;line-height:0}.pro-canvas{display:block;max-width:100%;max-height:calc(100vh - 210px);height:auto;width:auto;touch-action:none;cursor:crosshair}.pro-empty{width:min(600px,100%);min-height:350px;border:1px dashed #345745;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px;background:radial-gradient(ellipse at center,#1c53351a,transparent 70%)}.pro-empty-icon{width:62px;height:62px;border:1px solid #2c6d4a;background:#133222;border-radius:17px;display:grid;place-items:center;color:var(--emerald);margin-bottom:18px}.pro-empty h2{font-size:21px;letter-spacing:-.6px;margin:0 0 8px}.pro-empty p{max-width:360px;color:#8ca79a;font-size:12px;line-height:1.7;margin:0 0 20px}.pro-bottom{height:35px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 15px;border-top:1px solid #1b2b23;background:#0a120e;color:#799788;font-size:9px}.pro-zoom{display:flex;align-items:center;gap:8px}.pro-zoom button{border:0;background:transparent;color:#8ba99a;padding:3px;display:grid;place-items:center}.pro-zoom strong{color:#c4dbce;font-size:10px;min-width:34px;text-align:center}',
+    '.pro-inspector{border-left:1px solid #23372e;background:#0b1410;min-width:0;display:flex;flex-direction:column}.pro-tabs{display:grid;grid-template-columns:repeat(3,1fr);height:43px;border-bottom:1px solid #23372e}.pro-tab{border:0;border-bottom:2px solid transparent;background:transparent;color:#789889;font-size:10px!important;display:flex;align-items:center;justify-content:center;gap:6px}.pro-tab.active{border-bottom-color:var(--emerald);color:#dff8e9;background:#122019}.pro-inspector-content{padding:16px;overflow:auto;max-height:calc(100vh - 108px)}.pro-section-title{display:flex;align-items:center;justify-content:space-between;color:#e0efe6;font-size:11px;font-weight:700;margin:3px 0 14px}.pro-muted{color:#789889;font-size:10px;line-height:1.65}.pro-field{display:flex;flex-direction:column;gap:8px;margin:0 0 16px;font-size:10px;color:#9ab4a5}.pro-field-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.pro-value{color:#d3e9dc;font-variant-numeric:tabular-nums}.pro-field input[type=range]{width:100%;accent-color:#4fdda0}.pro-field input[type=text],.pro-field input[type=number],.pro-field select,.pro-field textarea{width:100%;background:#08110c;border:1px solid #2b4336;color:#e4f3e9;border-radius:7px;padding:9px 10px;font-size:11px!important;outline:none}.pro-field input:focus,.pro-field select:focus,.pro-field textarea:focus{border-color:#4bbd82}.pro-field input[type=color]{width:100%;height:34px;border:1px solid #2b4336;border-radius:7px;background:#08110c;padding:3px}.pro-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pro-divider-line{height:1px;background:#203229;margin:17px 0}.pro-layer-list{display:flex;flex-direction:column;gap:5px}.pro-layer{display:flex;align-items:center;gap:7px;min-height:41px;padding:6px 7px;border:1px solid transparent;border-radius:8px;background:#0e1a13;color:#a8c3b4}.pro-layer.selected{background:#153725;border-color:#347e56;color:#e4f9ed}.pro-layer-name{min-width:0;flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:transparent;border:0;color:inherit;font-size:10px!important;padding:5px 0}.pro-layer small{font-size:8px;color:#729281}.pro-layer-icon{color:#64dca0;flex:none}.pro-layer-actions{display:flex;gap:2px}.pro-layer-actions button{display:grid;place-items:center;width:23px;height:25px;border:0;background:transparent;color:#7e9e8c;border-radius:5px;padding:0}.pro-layer-actions button:hover{background:#294a36;color:#e8fff1}.pro-panel-note{padding:10px;border:1px solid #284c38;border-radius:8px;background:#102419;color:#9cb9a8;font-size:9px;line-height:1.6;margin-bottom:15px}.pro-empty-layers{padding:20px 8px;text-align:center;color:#769382;font-size:10px;line-height:1.7}.pro-chip-row{display:flex;gap:6px;flex-wrap:wrap}.pro-chip{border:1px solid #2b4537;background:#101e16;color:#a5c2b1;border-radius:7px;padding:8px 9px;font-size:10px!important}.pro-chip:hover{border-color:#4c9c70;color:#e8fff0}.pro-chip.active{background:#16442d;border-color:#3b9865;color:#80f0b7}.pro-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-top:1px solid #203128;background:#08110c;color:#688777;font-size:9px}.pro-footer strong{color:#8db29c;font-weight:600}.pro-notice{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);z-index:50;max-width:min(600px,calc(100vw - 30px));display:flex;align-items:center;gap:9px;padding:11px 14px;border:1px solid #397a55;border-radius:10px;background:#10291c;color:#d8f4e3;box-shadow:0 12px 40px #0008;font-size:11px}.pro-notice button{border:0;background:transparent;color:#a4c8b3;padding:0 0 0 8px}.pro-hidden{display:none!important}',
+    '@media(max-width:1000px){.pro-workspace{grid-template-columns:58px minmax(0,1fr)}.pro-inspector{grid-column:1/-1;border-left:0;border-top:1px solid #23372e}.pro-inspector-content{max-height:none}.pro-stage{min-height:420px}.pro-canvas{max-height:70vh}.pro-top{padding:0 12px;gap:8px}.pro-brand{min-width:auto}.pro-brand small{display:none}}',
+    '@media(max-width:620px){.pro-top{height:auto;min-height:58px;flex-wrap:wrap;padding:10px}.pro-file-actions .pro-btn:not(.pro-primary){display:none}.pro-workspace{grid-template-columns:52px minmax(0,1fr)}.pro-tools{padding:9px 3px}.pro-tool{width:43px;height:43px}.pro-stage{padding:12px;min-height:320px}.pro-canvas{max-height:55vh}.pro-docbar{padding:0 9px}.pro-inspector-content{padding:13px}.pro-top-right .pro-btn{padding:8px}.pro-brand{font-size:13px}.pro-brand .pro-mark{width:30px;height:30px}.pro-bottom{padding:0 8px}.pro-footer{padding:12px;flex-wrap:wrap}.pro-empty{min-height:300px}.pro-empty h2{font-size:18px}}'
+  ].join('');
+
+  return <div className="pro-shell">
+    <style>{styles}</style>
+    <header className="pro-top">
+      <a href="/" className="pro-brand" onClick={(event) => event.preventDefault()}><span className="pro-mark"><ImageIcon size={19} /></span><span>FreeImage<small>PRO IMAGE WORKSPACE</small></span></a>
+      <div className="pro-divider" />
+      <div className="pro-file-actions">
+        <button className="pro-btn" onClick={() => inputRef.current && inputRef.current.click()}><Upload size={14} /> Open image</button>
+        <input ref={inputRef} className="pro-hidden" type="file" accept="image/*" onChange={(event) => loadImage(event.target.files && event.target.files[0])} />
+        <button className="pro-btn" onClick={undo} disabled={!history.length} title="Undo"><Undo2 size={15} /></button>
+        <button className="pro-btn" onClick={redo} disabled={!future.length} title="Redo"><Redo2 size={15} /></button>
+        <button className="pro-btn" onClick={resetDocument} disabled={!image}><RotateCcw size={14} /> Reset</button>
+      </div>
+      <div className="pro-top-spacer" />
+      <div className="pro-top-right">
+        <button className="pro-btn" onClick={() => setPanel('adjust')}><SlidersHorizontal size={14} /> Adjust</button>
+        <button className="pro-btn pro-primary" onClick={exportImage} disabled={!image || busy}>{busy ? <span>Exporting…</span> : <><Download size={14} /> Export</>}</button>
       </div>
     </header>
-    <main>
-      {!isToolPage&&<><section className="hero">
-        <div className="hero-copy"><div className="eyebrow"><span className="live-dot"/> FREE TOOLS. PRIVATE BY DESIGN.</div>
-          <h1>Your images.<br/><span>Your device.</span></h1>
-          <p className="hero-lede">A powerful image toolkit for everyday edits, screenshot markups and privacy cleanup — without subscriptions, uploads or nonsense.</p>
-          <div className="hero-actions"><a className="primary-button" href="#tools"><Upload size={18}/> Explore tools <ArrowRight size={17}/></a><a className="text-link" href="#tools">Explore all tools <ArrowDownToLine size={16}/></a></div>
-          <div className="trust-row"><span><ShieldCheck size={17}/> Local processing</span><span><LockKeyhole size={17}/> No account</span><span><Zap size={17}/> Free to use</span></div>
+
+    <div className="pro-workspace">
+      <aside className="pro-tools" aria-label="Editing tools">
+        {TOOLSET.map((item, index) => <React.Fragment key={item.id}>
+          {(index === 2 || index === 4 || index === 6) && <span className="pro-tool-sep" />}
+          <button className={'pro-tool' + (tool === item.id ? ' active' : '')} title={item.label} aria-label={item.label} onClick={() => setTool(item.id)}>
+            <item.Icon size={18} /><span>{item.label}</span>
+          </button>
+        </React.Fragment>)}
+        <span className="pro-tool-sep" />
+        <button className="pro-tool" title="Adjustments" onClick={() => setPanel('adjust')}><SlidersHorizontal size={18} /><span>Adjust</span></button>
+        <button className="pro-tool" title="Layers" onClick={() => setPanel('layers')}><Layers size={18} /><span>Layers</span></button>
+      </aside>
+
+      <main className="pro-center">
+        <div className="pro-docbar">
+          <span><strong>{file ? file.name : 'Untitled document'}</strong> {image ? ' · ' + dims + ' px' : ' · No image open'}</span>
+          <span>{tool.toUpperCase()} TOOL</span>
         </div>
-        <div className="hero-art" aria-label="Decorative image editing preview"><div className="art-orbit orbit-a"/><div className="art-orbit orbit-b"/><div className="art-card art-back"><div className="mini-top"><span/><span/><span/></div><div className="mini-image"><div className="sun"/><div className="mountain mountain-a"/><div className="mountain mountain-b"/><div className="lake"/></div></div><div className="art-card art-front"><div className="art-chip"><Sparkles size={14}/> IMAGE, REIMAGINED</div><div className="art-preview"><div className="preview-sun"/><div className="preview-land"/></div><div className="art-meta"><span><b>Clean edits</b><small>Right in your browser</small></span><span className="art-check"><Check size={16}/></span></div></div><div className="floating-tag tag-private"><ShieldCheck size={15}/> Stays on device</div><div className="floating-tag tag-format">PNG <span>↔</span> WEBP</div></div>
-      </section>
-      <section className="privacy-banner" id="privacy"><div className="privacy-icon"><LockKeyhole size={23}/></div><div><h3>Your image never leaves your device.</h3><p>Editing happens locally in your browser. FreeImage does not upload your images to a processing server.</p></div><span className="privacy-status"><span/> LOCAL-FIRST</span></section>
-      <section className="tools-section" id="tools"><div className="section-heading"><div><div className="eyebrow">YOUR CREATIVE TOOLBOX</div><h2>Small edits. <span>Big relief.</span></h2><p>Pick a tool, drop in an image, and make it yours.</p></div><div className="tool-count"><b>20</b><span>browser tools</span></div></div>
-        <div className="tool-groups">{groups.map((group,gi)=><div className="tool-group" key={group.title}><div className="group-title"><span className="group-index">0{gi+1}</span><h3>{group.title}</h3><span className="group-line"/></div><div className="tool-grid">{group.tools.map(([id,title,desc,Icon])=><button className={'tool-card '+(active===id?'tool-active':'')} key={id} onClick={()=>navigateTool(id)}><span className="tool-icon"><Icon size={20}/></span><span className="tool-copy"><b>{title}</b><small>{desc}</small></span><ArrowUpRight className="tool-arrow" size={17}/></button>)}</div></div>)}</div>
-      </section>
-      </>}
-      {isToolPage&&<section className="editor-section" id="editor"><div className="editor-heading"><div><div className="eyebrow">{isToolPage?'TOOL WORKSPACE':'THE WORKSPACE'}</div><h2>{selectedToolTitle}</h2><p>{isToolPage?tool[2]+' — processed locally in your browser.':'Make a change and export a fresh copy. Your original stays untouched.'}</p></div><div className="editor-actions">{isToolPage&&<button className="subtle-button" onClick={navigateHome}><ArrowLeft size={15}/> All tools</button>}<button className="subtle-button" onClick={reset}><RotateCcw size={15}/> Clear image</button></div></div>
-        <div className="workspace">
-          <div className="upload-panel">
-            <div className="panel-label"><span>01</span> SOURCE IMAGE</div>
-            <input ref={fileRef} type="file" accept="image/*" hidden onChange={e=>loadFile(e.target.files?.[0])}/>
-            {!hasFile?<div className={'dropzone '+(dragging?'drop-active':'')} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={e=>{e.preventDefault();setDragging(false);loadFile(e.dataTransfer.files?.[0]);}} onClick={()=>fileRef.current?.click()}><div className="upload-orb"><Upload size={25}/></div><b>Drop your image here</b><p>or click to browse your device</p><span className="file-types">JPG · PNG · WEBP · GIF · up to 40 MB</span></div>:<div className="file-loaded"><div className="file-thumb"><img src={source.src} alt="Uploaded preview"/></div><div className="file-details"><b>{file.name}</b><span>{dimensions}</span><span>{prettyBytes(file.size)}</span><div className="local-pill"><Check size={12}/> On this device</div></div><button className="icon-button" onClick={reset} aria-label="Remove image"><X size={17}/></button><button className="change-file" onClick={()=>fileRef.current?.click()}>Change image</button></div>}
-            <div className="privacy-note"><ShieldCheck size={16}/><span><b>Private by design</b><small>Nothing is uploaded to a server.</small></span></div>
-          </div>
-          <div className="settings-panel"><div className="panel-label"><span>02</span> TOOL SETTINGS</div>
-            {!hasFile&&<div className="settings-empty"><div><MousePointer2 size={21}/></div><b>Ready when you are</b><p>Choose an image to unlock the workspace controls.</p></div>}
-            {hasFile&&<div className="settings-content">
-              {active==='resize'&&<><Field label="Width (px)"><input type="number" min="1" max="12000" value={settings.width} onChange={e=>update('width',e.target.value)}/></Field><Field label="Height (px)"><input type="number" min="1" max="12000" value={settings.height} onChange={e=>update('height',e.target.value)}/></Field><button className="quick-button" onClick={()=>{update('width',source.naturalWidth);update('height',source.naturalHeight);}}>Use original dimensions</button></>}
-              {active==='crop'&&<><Field label="Left offset (%)"><input type="number" min="0" max="95" value={settings.cropX} onChange={e=>update('cropX',+e.target.value)}/></Field><Field label="Top offset (%)"><input type="number" min="0" max="95" value={settings.cropY} onChange={e=>update('cropY',+e.target.value)}/></Field><Field label="Crop width (%)"><input type="number" min="5" max="100" value={settings.cropW} onChange={e=>update('cropW',+e.target.value)}/></Field><Field label="Crop height (%)"><input type="number" min="5" max="100" value={settings.cropH} onChange={e=>update('cropH',+e.target.value)}/></Field></>}
-              {(active==='compress'||active==='convert')&&<><Field label="Output format"><select value={settings.format} onChange={e=>update('format',e.target.value)}><option value="image/webp">WebP — compact</option><option value="image/jpeg">JPG — compatible</option><option value="image/png">PNG — lossless</option></select></Field><Field label={'Quality · '+settings.quality+'%'}><input type="range" min="20" max="100" value={settings.quality} onChange={e=>update('quality',+e.target.value)}/></Field><p className="field-hint">Quality applies to JPG and WebP. PNG export is lossless.</p></>}
-              {active==='rounded'&&<Field label={'Corner radius · '+settings.radius+' px'}><input type="range" min="0" max="180" value={settings.radius} onChange={e=>update('radius',+e.target.value)}/></Field>}
-              {active==='borders'&&<><Field label={'Border width · '+settings.border+' px'}><input type="range" min="1" max="100" value={settings.border} onChange={e=>update('border',+e.target.value)}/></Field><Field label="Border color"><input type="color" value={settings.color} onChange={e=>update('color',e.target.value)}/></Field></>}
-              {active==='blur'&&<Field label={'Blur strength · '+settings.blur+' px'}><input type="range" min="4" max="42" value={settings.blur} onChange={e=>update('blur',+e.target.value)}/></Field>}
-              {active==='pixelate'&&<Field label={'Pixel size · '+settings.pixel+' px'}><input type="range" min="4" max="40" value={settings.pixel} onChange={e=>update('pixel',+e.target.value)}/></Field>}
-              {active==='screenshot'&&<><Field label={'Brightness · '+settings.brightness+'%'}><input type="range" min="60" max="150" value={settings.brightness} onChange={e=>update('brightness',+e.target.value)}/></Field><Field label={'Contrast · '+settings.contrast+'%'}><input type="range" min="60" max="180" value={settings.contrast} onChange={e=>update('contrast',+e.target.value)}/></Field></>}
-              {isEdit&&<><div className="edit-instructions"><Paintbrush size={17}/><span>Use the add button to place a {active} marker on the image preview. You can add multiple markers.</span></div>{['text','number'].includes(active)&&<Field label={active==='number'?'Marker label':'Text label'}><input value={settings.text} onChange={e=>update('text',e.target.value)} /></Field>}<Field label="Marker color"><input type="color" value={settings.color} onChange={e=>update('color',e.target.value)}/></Field><button className="quick-button" onClick={addMarkup}>Add another marker</button><button className="quick-button" onClick={()=>setMarkups([])}>Clear all markers</button></>}
-              {['upscale','sharpen','remove-metadata','image-pdf','background'].includes(active)&&<div className="tool-explainer"><Sparkles size={18}/><span>{active==='upscale'?'Doubles the pixel dimensions using browser resampling; this is not generative AI upscaling.':active==='sharpen'?'Applies a local contrast enhancement to make edges appear crisper.':active==='remove-metadata'?'Re-encodes the image through canvas, removing EXIF and other embedded metadata.':active==='image-pdf'?'Creates a single-page PDF sized to your image.': 'Makes a similarly coloured background connected to the image edges transparent. Best for plain, solid backgrounds; inspect the result before downloading.'}</span></div>}
-              <button className="process-button" disabled={busy} onClick={process}>{busy?<span className="spinner"/>:isEdit?<Plus size={18}/>:<WandSparkles size={18}/>} {busy?'Processing…':isEdit&&!markups.length?'Add marker to preview':isEdit?'Export marked image':'Process image'} <ArrowRight size={17}/></button>
-            </div>}
-          </div>
+        <div className="pro-stage" ref={stageRef} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); loadImage(event.dataTransfer.files && event.dataTransfer.files[0]); }}>
+          {!image ? <div className="pro-empty">
+            <span className="pro-empty-icon"><ImageIcon size={27} /></span>
+            <h2>Your creative workspace</h2>
+            <p>One professional editing space. Open an image to work with layers, retouching, drawing, typography, colour adjustments, and export — all in one place.</p>
+            <button className="pro-btn pro-primary" onClick={() => inputRef.current && inputRef.current.click()}><Upload size={15} /> Open image from device</button>
+            <p style={{ marginTop: 15, marginBottom: 0, fontSize: 10 }}>Local-first editing · PNG, JPEG, WebP, GIF and browser-supported image formats</p>
+          </div> : <div className="pro-canvas-wrap">
+            <canvas ref={canvasRef} className="pro-canvas" style={{ zoom: zoom / 100, cursor: ['brush', 'eraser', 'shape', 'blur', 'pixelate'].includes(tool) ? 'crosshair' : 'default' }} onPointerDown={onCanvasDown} onPointerMove={onCanvasMove} onPointerUp={onCanvasUp} onPointerCancel={onCanvasUp} />
+          </div>}
         </div>
-        {notice&&<div className="notice"><span><Check size={16}/></span>{notice}<button onClick={()=>setNotice('')} aria-label="Dismiss message"><X size={15}/></button></div>}
-        <div className="preview-panel"><div className="preview-heading"><div><div className="panel-label"><span>03</span> LIVE PREVIEW</div><b>{hasFile?'Your working image':'Your canvas will appear here'}</b></div>{hasFile&&<span className="preview-dimensions">{dimensions}</span>}</div><div className="preview-canvas">{hasFile?<canvas ref={canvasRef}/>:<div className="preview-placeholder"><ImageIcon size={35}/><b>A little creative space</b><span>Upload an image to see your preview here.</span></div>}</div>
-          {output&&<div className="output-row"><div className="output-icon"><FileImage size={20}/></div><div className="output-meta"><b>{output.name}</b><span>{prettyBytes(output.size)} · Ready to save</span></div><button className="download-button" onClick={downloadOutput}><Download size={17}/> Download</button></div>}
+        <div className="pro-bottom">
+          <span>{image ? dims + ' px' : 'Ready when you are'} · <span style={{ color: '#58dba0' }}>LOCAL PROCESSING</span></span>
+          <div className="pro-zoom"><button onClick={() => setZoom((value) => clamp(value - 10, 25, 200))} title="Zoom out"><ZoomOut size={14} /></button><strong>{zoom}%</strong><button onClick={() => setZoom((value) => clamp(value + 10, 25, 200))} title="Zoom in"><ZoomIn size={14} /></button><button onClick={() => setZoom(100)}>Fit</button></div>
         </div>
-      </section>}
-      {!isToolPage&&<section className="toolkit-section" id="toolkit"><div className="toolkit-card"><div className="toolkit-copy"><div className="eyebrow">THE SCREENSHOT TOOLKIT</div><h2>Share the point.<br/><span>Not the private bits.</span></h2><p>Mark up screenshots with arrows, shapes, highlights, text and numbered steps. Automatic detection of sensitive text is not included yet, so manually blur or pixelate private details before sharing.</p><div className="toolkit-tags"><span><Check size={13}/> Mark up</span><span><Check size={13}/> Redact carefully</span><span><Check size={13}/> Download clean</span></div><button className="primary-button" onClick={()=>{setActive('blur');document.getElementById('editor')?.scrollIntoView({behavior:'smooth'});}}>Open image toolkit <ArrowRight size={16}/></button></div><div className="redaction-mock"><div className="mock-window"><div className="mock-bar"><span/><span/><span/><small>Screenshot.png</small></div><div className="mock-doc"><div className="mock-avatar">AK</div><div className="mock-line line-long"/><div className="mock-line line-short"/><div className="mock-data"><span>EMAIL</span><b>aarav@example.com</b><div className="redact-bar"/></div><div className="mock-data"><span>API KEY</span><b>sk_live_••••••••••</b><div className="redact-bar redacted-short"/></div><div className="mock-verified"><ShieldCheck size={15}/> Redaction preview</div></div></div><div className="mock-stamp"><ShieldCheck size={18}/><span><b>Review before sharing</b><small>Nothing sent to a server</small></span></div></div></div></section>
-      }
-    </main>
-    <footer className="ft-universal-footer">
-  <div className="ft-footer-main">
-    <div className="ft-footer-brand-block"><a className="ft-footer-brand" href="/" aria-label="FreeImage home"><img className="ft-footer-mark" src="/favicon.svg" alt="" aria-hidden="true"/><span>Free<span className="ft-footer-accent">Image</span><small>FREE TOOLZ PROJECT</small></span></a><p>Useful software. Without the nonsense.</p><span className="ft-footer-status">● Building useful things</span></div>
-    <div className="ft-footer-column"><b>Products</b><a href="/">FreeImage</a><a href="https://free-toolz.vercel.app/">FreeToolz hub ↗</a></div>
-    <div className="ft-footer-column"><b>Tools &amp; information</b><a href="/#tools">Explore tools</a><a href="/#privacy">Privacy &amp; local processing</a><a href="mailto:aarav.krish62442@gmail.com?subject=FreeImage%20Feedback">Feedback</a></div>
-    <div className="ft-footer-column"><b>Connect</b><a href="https://github.com/avada-kedavra62442/FreeImage" target="_blank" rel="noopener noreferrer">GitHub ↗</a><a href="mailto:aarav.krish62442@gmail.com">Email ↗</a><a href="https://www.linkedin.com/in/aarav-krish-665702440/" target="_blank" rel="noopener noreferrer">LinkedIn ↗</a></div>
-  </div><div className="ft-footer-bottom"><span>© {new Date().getFullYear()} FreeToolz · FreeImage</span><span>FREE FOREVER · NO ADS · NO PAYWALLS</span></div>
-</footer>
+      </main>
+
+      <aside className="pro-inspector">
+        <div className="pro-tabs">
+          <button className={'pro-tab' + (panel === 'properties' ? ' active' : '')} onClick={() => setPanel('properties')}><Settings2 size={13} /> Properties</button>
+          <button className={'pro-tab' + (panel === 'layers' ? ' active' : '')} onClick={() => setPanel('layers')}><Layers size={13} /> Layers</button>
+          <button className={'pro-tab' + (panel === 'adjust' ? ' active' : '')} onClick={() => setPanel('adjust')}><SlidersHorizontal size={13} /> Adjust</button>
+        </div>
+        <div className="pro-inspector-content">
+          {!image && <div className="pro-panel-note">Open an image to enable document properties, layers, colour adjustments, and export.</div>}
+          {panel === 'layers' && <>
+            <div className="pro-section-title"><span>Layers</span><span className="pro-muted">{layers.length} layer{layers.length === 1 ? '' : 's'}</span></div>
+            <div className="pro-panel-note">Keep edits organised. Paint, text, shapes and retouch regions are separate editable layers above your original image.</div>
+            <div className="pro-layer-list">
+              {[...layers].reverse().map((layer) => <div key={layer.id} className={'pro-layer' + (selected === layer.id ? ' selected' : '')}>
+                <span className="pro-layer-icon">{layer.type === 'text' ? <Type size={14} /> : layer.type === 'shape' ? <Shapes size={14} /> : layer.type === 'stroke' ? <Paintbrush size={14} /> : layer.type === 'region' ? <Aperture size={14} /> : <ImageIcon size={14} />}</span>
+                <button className="pro-layer-name" onClick={() => { setSelected(layer.id); setPanel('properties'); }} title={layer.name}>{layer.name}<small style={{ display: 'block', marginTop: 3 }}>{layer.type} · {layer.opacity == null ? 100 : layer.opacity}%</small></button>
+                <div className="pro-layer-actions"><button title={layer.visible === false ? 'Show layer' : 'Hide layer'} onClick={() => { commitHistory(); setLayers((items) => items.map((item) => item.id === layer.id ? { ...item, visible: item.visible === false } : item)); }}>{layer.visible === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>{!layer.locked && <button title="Delete layer" onClick={() => { commitHistory(); setLayers((items) => items.filter((item) => item.id !== layer.id)); if (selected === layer.id) setSelected(null); }}><X size={13} /></button>}</div>
+              </div>)}
+              {!layers.length && <div className="pro-empty-layers">Your layers will appear here once you open an image.</div>}
+            </div>
+            <div className="pro-divider-line" />
+            <div className="pro-section-title">Add a layer <Plus size={14} /></div>
+            <label className="pro-field">Text content<input value={textValue} onChange={(event) => setTextValue(event.target.value)} placeholder="Type your text" /></label>
+            <button className="pro-btn pro-primary" style={{ width: '100%', marginBottom: 9 }} onClick={addTextLayer} disabled={!image}><Type size={14} /> Add text layer</button>
+            <div className="pro-chip-row"><button className="pro-chip" onClick={() => addShapeLayer('rect')} disabled={!image}><Square size={12} /> Rectangle</button><button className="pro-chip" onClick={() => addShapeLayer('circle')} disabled={!image}><Circle size={12} /> Ellipse</button><button className="pro-chip" onClick={() => addShapeLayer('line')} disabled={!image}>Line</button></div>
+          </>}
+
+          {panel === 'adjust' && <>
+            <div className="pro-section-title">Colour & light <Sparkles size={14} /></div>
+            <div className="pro-panel-note">Adjustments are rendered live and applied to the exported image. Your source file is never overwritten.</div>
+            {[['brightness','Brightness',0,200,1,100],['contrast','Contrast',0,200,1,100],['saturation','Saturation',0,200,1,100],['warmth','Temperature',-100,100,1,0],['blur','Soft blur',0,12,.5,0],['grayscale','Grayscale',0,100,1,0],['sepia','Sepia',0,100,1,0]].map(([key,label,min,max,step,base]) => <label className="pro-field" key={key}><span className="pro-field-row"><span>{label}</span><span className="pro-value">{adjust[key]}{key === 'warmth' ? '' : '%'}</span></span><input type="range" min={min} max={max} step={step} value={adjust[key]} onChange={(event) => changeAdjust(key, event.target.value)} disabled={!image} /></label>)}
+            <button className="pro-btn" style={{ width: '100%' }} onClick={() => { commitHistory(); setAdjust(INITIAL_ADJUST); }}>Reset adjustments</button>
+          </>}
+
+          {panel === 'properties' && <>
+            <div className="pro-section-title">Tool properties <Settings2 size={14} /></div>
+            <div className="pro-panel-note">{TOOLSET.find((item) => item.id === tool)?.label || 'Move'} is active. Choose a tool from the left toolbar and edit its properties here.</div>
+            {tool === 'crop' ? <>
+              <div className="pro-section-title">Crop area (%)</div>
+              {[['x','Left',0,80],['y','Top',0,80],['w','Width',10,100],['h','Height',10,100]].map(([key,label,min,max]) => <label className="pro-field" key={key}><span className="pro-field-row"><span>{label}</span><span className="pro-value">{crop[key]}%</span></span><input type="range" min={min} max={max} value={crop[key]} onChange={(event) => { commitHistory(); setCrop((old) => ({ ...old, [key]: Number(event.target.value) })); }} disabled={!image} /></label>)}
+              <button className="pro-btn pro-primary" style={{ width: '100%' }} onClick={() => { commitHistory(); setTool('move'); setNotice('Crop applied to the working document.'); }} disabled={!image}><Crop size={14} /> Apply crop</button>
+              <button className="pro-btn" style={{ width: '100%', marginTop: 8 }} onClick={() => { commitHistory(); setCrop({ x: 0, y: 0, w: 100, h: 100 }); }}>Reset crop</button>
+            </> : <>
+              <label className="pro-field">Paint / shape colour<input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label>
+              <label className="pro-field"><span className="pro-field-row"><span>Brush / effect size</span><span className="pro-value">{brushSize}px</span></span><input type="range" min="2" max="80" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} /></label>
+              <label className="pro-field"><span className="pro-field-row"><span>Layer opacity</span><span className="pro-value">{opacity}%</span></span><input type="range" min="5" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /></label>
+              {activeLayer && !activeLayer.locked && <>
+                <div className="pro-divider-line" /><div className="pro-section-title">Selected layer</div>
+                <label className="pro-field">Layer name<input value={activeLayer.name} onChange={(event) => setLayers((items) => items.map((layer) => layer.id === selected ? { ...layer, name: event.target.value } : layer))} /></label>
+                {activeLayer.type === 'text' && <><label className="pro-field">Text<input value={activeLayer.text} onChange={(event) => setLayers((items) => items.map((layer) => layer.id === selected ? { ...layer, text: event.target.value, name: event.target.value || 'Text layer' } : layer))} /></label><label className="pro-field">Font size<input type="range" min="12" max="120" value={activeLayer.size || 38} onChange={(event) => patchSelected({ size: Number(event.target.value) })} /></label></>}
+                <label className="pro-field">Layer opacity<input type="range" min="0" max="100" value={activeLayer.opacity == null ? 100 : activeLayer.opacity} onChange={(event) => patchSelected({ opacity: Number(event.target.value) })} /></label>
+                <button className="pro-btn" style={{ width: '100%' }} onClick={removeSelected}><X size={14} /> Delete selected layer</button>
+              </>}
+              <div className="pro-divider-line" />
+              <div className="pro-section-title">Quick actions</div>
+              <div className="pro-chip-row"><button className={'pro-chip' + (tool === 'brush' ? ' active' : '')} onClick={() => setTool('brush')}><Paintbrush size={12} /> Brush</button><button className={'pro-chip' + (tool === 'text' ? ' active' : '')} onClick={() => setTool('text')}><Type size={12} /> Text</button><button className={'pro-chip' + (tool === 'crop' ? ' active' : '')} onClick={() => setTool('crop')}><Crop size={12} /> Crop</button></div>
+            </>}
+          </>}
+
+          <div className="pro-divider-line" />
+          <div className="pro-section-title">Export settings <Download size={14} /></div>
+          <label className="pro-field">File name<input value={filename} onChange={(event) => setFilename(event.target.value)} /></label>
+          <label className="pro-field">Format<select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}><option value="image/png">PNG · Lossless</option><option value="image/jpeg">JPEG · Smaller file</option><option value="image/webp">WebP · Modern</option></select></label>
+          {exportFormat !== 'image/png' && <label className="pro-field"><span className="pro-field-row"><span>Quality</span><span className="pro-value">{quality}%</span></span><input type="range" min="30" max="100" value={quality} onChange={(event) => setQuality(Number(event.target.value))} /></label>}
+          <button className="pro-btn pro-primary" style={{ width: '100%' }} onClick={exportImage} disabled={!image || busy}><Download size={14} /> Export image</button>
+          <p className="pro-muted" style={{ marginTop: 12 }}>Edits run in your browser. Files are not uploaded to a processing server.</p>
+        </div>
+      </aside>
+    </div>
+    <footer className="pro-footer"><span><strong>FreeImage</strong> · Useful software. Without the nonsense.</span><span>FREE FOREVER · NO ADS · NO PAYWALLS</span><span>© 2026 FreeToolz</span></footer>
+    {notice && <div className="pro-notice"><Check size={15} /> <span>{notice}</span><button onClick={() => setNotice('')} aria-label="Dismiss"><X size={14} /></button></div>}
   </div>;
 }
-function Field({label,children}){return <label className="field"><span>{label}</span>{children}</label>;}
