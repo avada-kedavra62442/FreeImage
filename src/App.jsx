@@ -18,7 +18,6 @@ const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 export default function App() {
   const [file, setFile] = useState(null);
   const [showEditor, setShowEditor] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
   const [aiWorking, setAiWorking] = useState(false);
   const [image, setImage] = useState(null);
   const [tool, setTool] = useState('move');
@@ -274,22 +273,38 @@ export default function App() {
   }
 
   async function runAIEdit() {
-    if (!image) { setNotice('Open an image before using AI editing.'); return; }
-    if (!aiPrompt.trim()) { setNotice('Describe the change you want AI to make.'); return; }
-    setAiWorking(true); setNotice('Preparing image for AI editing…');
+    if (!image) { setNotice('Open an image before using AI tools.'); return; }
+    if (aiWorking) return;
+    setAiWorking(true); setNotice('Loading the free, in-browser AI model… The first run downloads model files.');
+    let resultUrl = null;
     try {
-      const scale = Math.min(1, 1024 / image.naturalWidth, 1024 / image.naturalHeight);
-      const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(image.naturalWidth * scale)); c.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      c.getContext('2d').drawImage(image, 0, 0, c.width, c.height);
-      const response = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: c.toDataURL('image/jpeg', 0.86), prompt: aiPrompt.trim() }) });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || 'AI editing could not complete.');
-      if (!data.image) throw new Error('The AI service returned no edited image.');
+      const sourceCanvas = document.createElement('canvas');
+      sourceCanvas.width = image.naturalWidth; sourceCanvas.height = image.naturalHeight;
+      sourceCanvas.getContext('2d').drawImage(image, 0, 0);
+      const sourceBlob = await new Promise((resolve, reject) => sourceCanvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not prepare this image.')), 'image/png'));
+      const { default: removeBackground } = await import('@imgly/background-removal');
+      setNotice('AI is separating the subject from the background. This may take a while on the first run…');
+      const resultBlob = await removeBackground(sourceBlob);
+      resultUrl = URL.createObjectURL(resultBlob);
       const result = new Image();
-      result.onload = () => { setImage(result); setLayers([{ id: uid(), name: 'AI edited image', type: 'image', visible: true, locked: true, opacity: 100 }]); setSelected(null); setCrop({x:0,y:0,w:100,h:100}); setRotation(0); setFlipX(false); setFlipY(false); setHistory([]); setFuture([]); setNotice('AI edit ready. Your original local file has not been overwritten.'); setAiWorking(false); };
-      result.onerror = () => { setNotice('The AI-generated image could not be opened.'); setAiWorking(false); };
-      result.src = data.image;
-    } catch (error) { setNotice(error.message || 'AI editing failed. Check the AI configuration.'); setAiWorking(false); }
+      result.onload = () => {
+        setImage(result);
+        const baseName = (file?.name || filename || 'image').replace(/\\.[^.]+$/, '');
+        setFile(new File([resultBlob], baseName + '-no-background.png', { type: 'image/png' }));
+        setFilename(baseName + '-no-background');
+        setLayers([{ id: uid(), name: 'AI background removed', type: 'image', visible: true, locked: true, opacity: 100 }]);
+        setSelected(null); setAdjust(INITIAL_ADJUST); setCrop({ x: 0, y: 0, w: 100, h: 100 });
+        setRotation(0); setFlipX(false); setFlipY(false); setHistory([]); setFuture([]);
+        setNotice('Background removed by free in-browser AI. Export as PNG to preserve transparency.');
+        setAiWorking(false); URL.revokeObjectURL(resultUrl);
+      };
+      result.onerror = () => { URL.revokeObjectURL(resultUrl); setNotice('The AI result could not be opened. Please try again.'); setAiWorking(false); };
+      result.src = resultUrl;
+    } catch (error) {
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      setNotice((error?.message || 'Free AI background removal failed.') + ' Check your connection and try again.');
+      setAiWorking(false);
+    }
   }
 
   async function exportImage() {
@@ -349,7 +364,7 @@ export default function App() {
 <section className="fi-hero"><div className="fi-hero-copy"><div className="fi-eyebrow"><span/> ONE WORKSPACE. LIMITLESS EDITS.</div><h1>Make every image<br/><em>look intentional.</em></h1><p>A complete creative workspace for editing, retouching, layers, typography, colour grading and AI-assisted transformations. No maze of tiny tools. Just one powerful editor.</p><div className="fi-hero-actions"><button className="fi-cta" onClick={()=>setShowEditor(true)}><Sparkles size={17}/> Enter the workspace <ArrowRight size={16}/></button><a href="#fi-features">Explore the features ↓</a></div><div className="fi-trust"><span><LockKeyhole size={15}/> Local-first editing</span><span><Layers size={15}/> Layer workflow</span><span><WandSparkles size={15}/> AI-ready studio</span></div></div>
 <div className="fi-hero-visual"><div className="fi-mock-window"><div className="fi-mock-top"><span/><span/><span/><b>FREEIMAGE · STUDIO</b><i>100%</i></div><div className="fi-mock-body"><div className="fi-mock-tools"><span>↖</span><span>⌗</span><span>✎</span><span>T</span><span>◈</span></div><div className="fi-mock-canvas"><i className="fi-sun"/><i className="fi-mountain"/><i className="fi-mountain second"/><i className="fi-water"/></div><div className="fi-mock-inspector"><b>Adjustments</b><small>Exposure</small><span/><small>Contrast</small><span/><small>Saturation</small><span/><b>Layers</b><label>◉ Background</label><label>◉ Colour grade</label></div></div><div className="fi-mock-bottom"><span>● DOCUMENT READY</span><span>PNG · 2400 × 1600</span></div></div><div className="fi-float fi-float-ai"><Sparkles size={14}/> AI-assisted editing <b>Ready</b></div><div className="fi-float fi-float-layer"><Layers size={14}/> Editable layers</div></div></section>
 <section className="fi-proof"><div><b>01</b><span>One unified workspace</span></div><div><b>02</b><span>Precision editing controls</span></div><div><b>03</b><span>AI image transformation</span></div><div><b>04</b><span>Flexible export</span></div></section>
-<section className="fi-features" id="fi-features"><div className="fi-section-heading"><span className="fi-eyebrow">THE WHOLE TOOLKIT, FINALLY TOGETHER</span><h2>Professional control.<br/><em>Without the clutter.</em></h2><p>Everything lives in the same document, so you can combine tools instead of bouncing between mini-apps.</p></div><div className="fi-feature-grid"><article className="fi-feature-card fi-feature-wide"><span className="fi-feature-icon"><Layers size={20}/></span><small>01 / COMPOSE</small><h3>A real layer workflow</h3><p>Keep text, shapes, brush strokes and retouching on separate editable layers. Manage visibility, opacity and properties from one place.</p><div className="fi-layer-pills"><span>◉ Background image</span><span>◉ Typography</span><span>◉ Shape accent</span></div></article><article className="fi-feature-card"><span className="fi-feature-icon"><SlidersHorizontal size={20}/></span><small>02 / GRADE</small><h3>Fine-tune every tone</h3><p>Adjust brightness, contrast, saturation, warmth, blur, grayscale and sepia in a live panel.</p><div className="fi-sliders"><i/><i/><i/><i/></div></article><article className="fi-feature-card"><span className="fi-feature-icon"><Crop size={20}/></span><small>03 / RETOUCH</small><h3>Tools that work together</h3><p>Crop, paint, erase, add text and shapes, blur sensitive areas, pixelate details, then export.</p><div className="fi-tool-pills"><span>Crop</span><span>Brush</span><span>Text</span><span>Blur</span><span>Shapes</span></div></article><article className="fi-feature-card fi-feature-ai" id="fi-ai"><span className="fi-feature-icon"><WandSparkles size={20}/></span><small>04 / AI STUDIO</small><h3>Describe the edit.<br/>Let AI do the heavy lift.</h3><p>Prompt-based image editing in the same workspace. An OpenAI API key must be configured in Vercel; missing configuration is reported clearly.</p><button className="fi-cta fi-cta-small" onClick={()=>{setShowEditor(true);setPanel('ai')}}>Explore AI Studio <ArrowRight size={15}/></button></article></div></section>
+<section className="fi-features" id="fi-features"><div className="fi-section-heading"><span className="fi-eyebrow">THE WHOLE TOOLKIT, FINALLY TOGETHER</span><h2>Professional control.<br/><em>Without the clutter.</em></h2><p>Everything lives in the same document, so you can combine tools instead of bouncing between mini-apps.</p></div><div className="fi-feature-grid"><article className="fi-feature-card fi-feature-wide"><span className="fi-feature-icon"><Layers size={20}/></span><small>01 / COMPOSE</small><h3>A real layer workflow</h3><p>Keep text, shapes, brush strokes and retouching on separate editable layers. Manage visibility, opacity and properties from one place.</p><div className="fi-layer-pills"><span>◉ Background image</span><span>◉ Typography</span><span>◉ Shape accent</span></div></article><article className="fi-feature-card"><span className="fi-feature-icon"><SlidersHorizontal size={20}/></span><small>02 / GRADE</small><h3>Fine-tune every tone</h3><p>Adjust brightness, contrast, saturation, warmth, blur, grayscale and sepia in a live panel.</p><div className="fi-sliders"><i/><i/><i/><i/></div></article><article className="fi-feature-card"><span className="fi-feature-icon"><Crop size={20}/></span><small>03 / RETOUCH</small><h3>Tools that work together</h3><p>Crop, paint, erase, add text and shapes, blur sensitive areas, pixelate details, then export.</p><div className="fi-tool-pills"><span>Crop</span><span>Brush</span><span>Text</span><span>Blur</span><span>Shapes</span></div></article><article className="fi-feature-card fi-feature-ai" id="fi-ai"><span className="fi-feature-icon"><WandSparkles size={20}/></span><small>04 / FREE AI STUDIO</small><h3>AI background removal.</h3><p>Remove backgrounds with an open-source AI model running in your browser. No paid API key, account, or per-image API charge.</p><button className="fi-cta fi-cta-small" onClick={()=>{setShowEditor(true);setPanel('ai')}}>Explore AI Studio <ArrowRight size={15}/></button></article></div></section>
 <section className="fi-tool-band" id="fi-tools"><div><span className="fi-eyebrow">BUILT FOR REAL WORK</span><h2>From quick fixes to<br/><em>considered edits.</em></h2></div><div className="fi-tool-list"><span>✓ Crop and composition</span><span>✓ Colour and light adjustments</span><span>✓ Brush, eraser and retouching</span><span>✓ Typography and shapes</span><span>✓ Blur and pixelation regions</span><span>✓ PNG, JPEG and WebP export</span></div></section>
 <footer className="fi-home-footer"><span><b>FreeImage</b> · Useful software. Without the nonsense.</span><span>FREE FOREVER · NO ADS · NO PAYWALLS</span><span>© 2026 FreeToolz</span></footer></main>}
     {showEditor && <div className="pro-workspace">
@@ -413,7 +428,7 @@ export default function App() {
             <div className="pro-chip-row"><button className="pro-chip" onClick={() => addShapeLayer('rect')} disabled={!image}><Square size={12} /> Rectangle</button><button className="pro-chip" onClick={() => addShapeLayer('circle')} disabled={!image}><Circle size={12} /> Ellipse</button><button className="pro-chip" onClick={() => addShapeLayer('line')} disabled={!image}>Line</button></div>
           </>}
 
-          {panel === 'ai' && <><div className="pro-section-title"><span>AI image studio</span><Sparkles size={14}/></div><div className="pro-panel-note">Describe the change in plain language. Only when you request an AI edit, a resized copy of your image is sent to the configured AI provider. Your original file stays on your device.</div><label className="pro-field">Describe your edit<textarea rows={5} value={aiPrompt} onChange={event => setAiPrompt(event.target.value)} placeholder="Replace the background with a soft studio gradient while keeping the subject unchanged." disabled={!image || aiWorking}/></label><div className="pro-chip-row">{["Remove background","Studio lighting","Cinematic colour","Clean up image"].map(prompt => <button className="pro-chip" key={prompt} onClick={() => setAiPrompt(prompt)} disabled={!image || aiWorking}>{prompt}</button>)}</div><button className="pro-btn pro-primary" style={{width:"100%",marginTop:14}} onClick={runAIEdit} disabled={!image || aiWorking}>{aiWorking ? "AI is working…" : <><WandSparkles size={14}/> Generate edited image</>}</button><p className="pro-muted" style={{marginTop:12}}>Requires <code>OPENAI_API_KEY</code> in Vercel Environment Variables. API usage may incur charges.</p></>}
+          {panel === 'ai' && <><div className="pro-section-title"><span>Free AI tools</span><Sparkles size={14}/></div><div className="pro-panel-note">Runs on your device using an open-source AI model. No OpenAI key, paid API, account, or image upload to an AI server. The first use downloads model files and may take a while; speed depends on your device.</div><div style={{padding:14,border:'1px solid #2b4537',borderRadius:10,marginBottom:12}}><h3 style={{fontSize:13,margin:'0 0 6px',color:'#e4f3e9'}}>Remove background</h3><p className="pro-muted">Automatically separate the main subject and make the background transparent. Export as PNG to keep transparency.</p><button className="pro-btn pro-primary" style={{width:'100%',marginTop:12}} onClick={runAIEdit} disabled={!image || aiWorking}>{aiWorking ? 'AI is working…' : <><WandSparkles size={14}/> Remove background — FREE</>}</button></div><p className="pro-muted">Free AI tool, runs in-browser. Model files download on first use; an internet connection is needed for that initial download. Source image pixels are processed locally.</p></>}
           {panel === 'adjust' && <>
             <div className="pro-section-title">Colour & light <Sparkles size={14} /></div>
             <div className="pro-panel-note">Adjustments are rendered live and applied to the exported image. Your source file is never overwritten.</div>
