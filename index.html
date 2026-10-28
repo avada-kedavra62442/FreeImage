@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#07130f" />
     <meta name="description" content="Free, private image editing tools. Resize, compress, convert, crop, annotate and clean images right in your browser." />
     <meta name="color-scheme" content="dark" />
@@ -20,6 +20,30 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="FreeImage" />
-</head>
+
+    <!-- FreeToolz responsive baseline: compact, expanded and foldable viewports; no dependencies. -->
+    <style>
+      html { min-width: 0; max-width: 100%; overflow-x: clip; }
+      body { min-width: 0; max-width: 100%; overflow-x: clip; padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+      #root, #app, main, header, footer, section, article, aside, nav, form { min-width: 0; }
+      img, video, canvas, iframe { max-width: 100%; }
+      input, select, textarea, button { max-width: 100%; }
+      pre, .code-block, .code-editor, .editor-pane, .output-pane { min-width: 0; max-width: 100%; overflow-x: auto; }
+      table { max-width: 100%; }
+      @media (max-width: 760px) {
+        .tool-grid, .tools-grid, .feature-grid, .features-grid, .cards-grid, .home-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+        .workspace-layout, .tool-layout, .app-layout, .split-layout { min-width: 0; }
+        input, select, textarea { font-size: max(16px, 1em); }
+        button, [role="button"], input[type="button"], input[type="submit"] { touch-action: manipulation; }
+      }
+      @media (horizontal-viewport-segments: 2) {
+        :root { --foldable-left-segment-width: env(viewport-segment-width 0 0, 100vw); --foldable-right-segment-width: env(viewport-segment-width 1 0, 0px); }
+      }
+      @media (vertical-viewport-segments: 2) {
+        :root { --foldable-top-segment-height: env(viewport-segment-height 0 0, 100vh); --foldable-bottom-segment-height: env(viewport-segment-height 0 1, 0px); }
+      }
+    </style>
+
+  </head>
   <body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>
 </html>
